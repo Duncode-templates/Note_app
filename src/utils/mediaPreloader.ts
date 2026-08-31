@@ -1,0 +1,873 @@
+// Pure High-Definition Audio Engine for Soccer-kick, Ball-hit-player, Whistle, and Goal Cheer Audio
+// Combines zero-latency Web Audio buffer playback, studio mastering equalizer & dynamics compressor.
+import { KICK_AUDIO_BASE64, KEEPER_HIT_AUDIO_BASE64 } from '../assets/audioData';
+import { STICKERS } from '../assets/stickers';
+import { updateCrowdMuteState } from './stadiumCrowdAudio';
+import whistleAudioSrc from '../assets/Whistle.mp3';
+import goalCheerAudioSrc from '../assets/Goalcheer.mp3';
+import crowdNoiseAudioSrc from '../assets/Crowd-noise.mp3';
+
+export { whistleAudioSrc, goalCheerAudioSrc, crowdNoiseAudioSrc };
+
+const AUDIO_SRC = KICK_AUDIO_BASE64 || '/Soccer-kick.mp3';
+const KEEPER_HIT_AUDIO_SRC = KEEPER_HIT_AUDIO_BASE64 || '/Ball-hit-player.wav';
+const WHISTLE_AUDIO_SRC = whistleAudioSrc;
+const GOAL_CHEER_AUDIO_SRC = goalCheerAudioSrc;
+
+const POOL_SIZE = 6;
+const audioElementsPool: HTMLAudioElement[] = [];
+const KEEPER_POOL_SIZE = 6;
+const keeperHitAudioPool: HTMLAudioElement[] = [];
+const WHISTLE_POOL_SIZE = 3;
+const whistleAudioPool: HTMLAudioElement[] = [];
+const GOAL_CHEER_POOL_SIZE = 2;
+const goalCheerAudioPool: HTMLAudioElement[] = [];
+
+let isAudioMutedGlobally = false;
+let kickAudioBuffer: AudioBuffer | null = null;
+let keeperHitAudioBuffer: AudioBuffer | null = null;
+let whistleAudioBuffer: AudioBuffer | null = null;
+let goalCheerAudioBuffer: AudioBuffer | null = null;
+
+let isDecodingKickAudio = false;
+let isDecodingKeeperAudio = false;
+let isDecodingWhistleAudio = false;
+let isDecodingGoalCheerAudio = false;
+
+let activeGoalCheerWebAudio: { source: AudioBufferSourceNode; gain: GainNode }[] = [];
+
+let nextPoolIndex = 0;
+let nextKeeperPoolIndex = 0;
+let nextWhistlePoolIndex = 0;
+let nextGoalCheerPoolIndex = 0;
+
+/**
+ * Shared reusable AudioContext with high-performance studio mastering pipeline:
+ * [Sound Sources] -> [Master Gain] -> [3-Band Equalizer] -> [Dynamics Compressor] -> [Destination]
+ */
+let sharedAudioCtx: AudioContext | null = null;
+let masterGainNode: GainNode | null = null;
+let masterCompressorNode: DynamicsCompressorNode | null = null;
+let eqLowShelfNode: BiquadFilterNode | null = null;
+let eqMidPeakNode: BiquadFilterNode | null = null;
+let eqHighShelfNode: BiquadFilterNode | null = null;
+
+function setupMasterAudioPipeline(ctx: AudioContext) {
+  if (masterGainNode) return;
+
+  try {
+    // 1. Master Volume Control Node
+    masterGainNode = ctx.createGain();
+    masterGainNode.gain.setValueAtTime(isAudioMutedGlobally ? 0.0 : 1.0, ctx.currentTime);
+
+    // 2. Three-Band Mastering Equalizer
+    // Low Shelf: Rich bottom end punch (120Hz, +1.5dB)
+    eqLowShelfNode = ctx.createBiquadFilter();
+    eqLowShelfNode.type = 'lowshelf';
+    eqLowShelfNode.frequency.setValueAtTime(120, ctx.currentTime);
+    eqLowShelfNode.gain.setValueAtTime(1.5, ctx.currentTime);
+
+    // Mid Peaking: De-harsh midrange frequencies (1600Hz, -2.0dB, Q=1.0)
+    eqMidPeakNode = ctx.createBiquadFilter();
+    eqMidPeakNode.type = 'peaking';
+    eqMidPeakNode.frequency.setValueAtTime(1600, ctx.currentTime);
+    eqMidPeakNode.Q.setValueAtTime(1.0, ctx.currentTime);
+    eqMidPeakNode.gain.setValueAtTime(-2.0, ctx.currentTime);
+
+    // High Shelf: Tame piercing whistle and sharp clipping transients (7000Hz, -2.5dB)
+    eqHighShelfNode = ctx.createBiquadFilter();
+    eqHighShelfNode.type = 'highshelf';
+    eqHighShelfNode.frequency.setValueAtTime(7000, ctx.currentTime);
+    eqHighShelfNode.gain.setValueAtTime(-2.5, ctx.currentTime);
+
+    // 3. Studio Dynamics Compressor: Prevents clipping, levels peaks, stops audio lag
+    masterCompressorNode = ctx.createDynamicsCompressor();
+    masterCompressorNode.threshold.setValueAtTime(-14, ctx.currentTime);
+    masterCompressorNode.knee.setValueAtTime(10, ctx.currentTime);
+    masterCompressorNode.ratio.setValueAtTime(3.5, ctx.currentTime);
+    masterCompressorNode.attack.setValueAtTime(0.003, ctx.currentTime);
+    masterCompressorNode.release.setValueAtTime(0.18, ctx.currentTime);
+
+    // Connect Pipeline:
+    // masterGain -> eqLowShelf -> eqMidPeak -> eqHighShelf -> masterCompressor -> destination
+    masterGainNode.connect(eqLowShelfNode);
+    eqLowShelfNode.connect(eqMidPeakNode);
+    eqMidPeakNode.connect(eqHighShelfNode);
+    eqHighShelfNode.connect(masterCompressorNode);
+    masterCompressorNode.connect(ctx.destination);
+  } catch {
+    // Pipeline fallback
+  }
+}
+
+function getSharedAudioContext(): AudioContext | null {
+  if (typeof window === 'undefined') return null;
+  if (!sharedAudioCtx) {
+    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (AudioContextClass) {
+      sharedAudioCtx = new AudioContextClass();
+      setupMasterAudioPipeline(sharedAudioCtx);
+    }
+  }
+  if (sharedAudioCtx) {
+    if (!masterGainNode) {
+      setupMasterAudioPipeline(sharedAudioCtx);
+    }
+    if (sharedAudioCtx.state === 'suspended') {
+      sharedAudioCtx.resume().catch(() => {});
+    }
+  }
+  return sharedAudioCtx;
+}
+
+function getMasterAudioInput(): AudioNode | null {
+  const ctx = getSharedAudioContext();
+  if (!ctx) return null;
+  if (!masterGainNode) {
+    setupMasterAudioPipeline(ctx);
+  }
+  return masterGainNode || ctx.destination;
+}
+
+export function muteAllAudio() {
+  isAudioMutedGlobally = true;
+  updateCrowdMuteState(true);
+  if (sharedAudioCtx && masterGainNode) {
+    try {
+      masterGainNode.gain.setTargetAtTime(0.0, sharedAudioCtx.currentTime, 0.02);
+    } catch {}
+  }
+  for (const el of audioElementsPool) {
+    try {
+      el.muted = true;
+      el.pause();
+    } catch {}
+  }
+  for (const el of keeperHitAudioPool) {
+    try {
+      el.muted = true;
+      el.pause();
+    } catch {}
+  }
+  for (const el of whistleAudioPool) {
+    try {
+      el.muted = true;
+      el.pause();
+    } catch {}
+  }
+  for (const el of goalCheerAudioPool) {
+    try {
+      el.muted = true;
+      el.pause();
+    } catch {}
+  }
+}
+
+export function unmuteAllAudio() {
+  isAudioMutedGlobally = false;
+  updateCrowdMuteState(false);
+  if (sharedAudioCtx && masterGainNode) {
+    try {
+      masterGainNode.gain.setTargetAtTime(1.0, sharedAudioCtx.currentTime, 0.03);
+    } catch {}
+  }
+  for (const el of audioElementsPool) {
+    try {
+      el.muted = false;
+    } catch {}
+  }
+  for (const el of keeperHitAudioPool) {
+    try {
+      el.muted = false;
+    } catch {}
+  }
+  for (const el of whistleAudioPool) {
+    try {
+      el.muted = false;
+    } catch {}
+  }
+  for (const el of goalCheerAudioPool) {
+    try {
+      el.muted = false;
+    } catch {}
+  }
+}
+
+export function isAudioMuted(): boolean {
+  return isAudioMutedGlobally;
+}
+
+/**
+ * Helper to convert Base64 string to ArrayBuffer for Web Audio decoding
+ */
+function base64ToArrayBuffer(base64Data: string): ArrayBuffer {
+  const base64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+  const binaryString = window.atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
+/**
+ * Decodes the kick, keeper hit, whistle, and goal cheer audio into native AudioBuffers once for 0ms latency playback
+ */
+function decodeNativeAudioBuffers() {
+  if (typeof window === 'undefined') return;
+  const ctx = getSharedAudioContext();
+  if (!ctx) return;
+
+  if (!kickAudioBuffer && !isDecodingKickAudio && KICK_AUDIO_BASE64) {
+    isDecodingKickAudio = true;
+    try {
+      const arrayBuf = base64ToArrayBuffer(KICK_AUDIO_BASE64);
+      ctx.decodeAudioData(
+        arrayBuf,
+        (decoded) => {
+          kickAudioBuffer = decoded;
+          isDecodingKickAudio = false;
+        },
+        () => {
+          isDecodingKickAudio = false;
+        }
+      );
+    } catch {
+      isDecodingKickAudio = false;
+    }
+  }
+
+  if (!keeperHitAudioBuffer && !isDecodingKeeperAudio && KEEPER_HIT_AUDIO_BASE64) {
+    isDecodingKeeperAudio = true;
+    try {
+      const arrayBuf = base64ToArrayBuffer(KEEPER_HIT_AUDIO_BASE64);
+      ctx.decodeAudioData(
+        arrayBuf,
+        (decoded) => {
+          keeperHitAudioBuffer = decoded;
+          isDecodingKeeperAudio = false;
+        },
+        () => {
+          isDecodingKeeperAudio = false;
+        }
+      );
+    } catch {
+      isDecodingKeeperAudio = false;
+    }
+  }
+
+  if (!whistleAudioBuffer && !isDecodingWhistleAudio && WHISTLE_AUDIO_SRC) {
+    isDecodingWhistleAudio = true;
+    try {
+      fetch(WHISTLE_AUDIO_SRC)
+        .then((res) => res.arrayBuffer())
+        .then((arrayBuf) => {
+          ctx.decodeAudioData(
+            arrayBuf,
+            (decoded) => {
+              whistleAudioBuffer = decoded;
+              isDecodingWhistleAudio = false;
+            },
+            () => {
+              isDecodingWhistleAudio = false;
+            }
+          );
+        })
+        .catch(() => {
+          isDecodingWhistleAudio = false;
+        });
+    } catch {
+      isDecodingWhistleAudio = false;
+    }
+  }
+
+  if (!goalCheerAudioBuffer && !isDecodingGoalCheerAudio && GOAL_CHEER_AUDIO_SRC) {
+    isDecodingGoalCheerAudio = true;
+    try {
+      fetch(GOAL_CHEER_AUDIO_SRC)
+        .then((res) => res.arrayBuffer())
+        .then((arrayBuf) => {
+          ctx.decodeAudioData(
+            arrayBuf,
+            (decoded) => {
+              goalCheerAudioBuffer = decoded;
+              isDecodingGoalCheerAudio = false;
+            },
+            () => {
+              isDecodingGoalCheerAudio = false;
+            }
+          );
+        })
+        .catch(() => {
+          isDecodingGoalCheerAudio = false;
+        });
+    } catch {
+      isDecodingGoalCheerAudio = false;
+    }
+  }
+}
+
+/**
+ * Pre-decodes image files with memory cache.
+ */
+const imagePromiseCache = new Map<string, Promise<void>>();
+
+export function preloadImage(src: string): Promise<void> {
+  if (typeof window === 'undefined' || !src) {
+    return Promise.resolve();
+  }
+  const cached = imagePromiseCache.get(src);
+  if (cached) return cached;
+
+  const promise = new Promise<void>((resolve) => {
+    const img = new Image();
+    img.src = src;
+    if (img.complete) {
+      resolve();
+      return;
+    }
+    img.onload = () => resolve();
+    img.onerror = () => resolve();
+  });
+
+  imagePromiseCache.set(src, promise);
+  return promise;
+}
+
+/**
+ * Preload sticker graphics safely after cache initialization
+ */
+if (typeof window !== 'undefined') {
+  Object.values(STICKERS).forEach((imgSrc) => {
+    preloadImage(imgSrc);
+  });
+}
+
+/**
+ * Initializes and unlocks the real HTML5 Audio audio elements pool and Web Audio context.
+ */
+export function initAudioUnlockListener() {
+  if (typeof window === 'undefined') return;
+
+  const ctx = getSharedAudioContext();
+  if (ctx && ctx.state === 'suspended') {
+    ctx.resume().catch(() => {});
+  }
+  decodeNativeAudioBuffers();
+
+  if (audioElementsPool.length === 0) {
+    for (let i = 0; i < POOL_SIZE; i++) {
+      const audio = new Audio(AUDIO_SRC);
+      audio.preload = 'auto';
+      audioElementsPool.push(audio);
+    }
+  }
+
+  if (keeperHitAudioPool.length === 0) {
+    for (let i = 0; i < KEEPER_POOL_SIZE; i++) {
+      const audio = new Audio(KEEPER_HIT_AUDIO_SRC);
+      audio.preload = 'auto';
+      keeperHitAudioPool.push(audio);
+    }
+  }
+
+  if (whistleAudioPool.length === 0) {
+    for (let i = 0; i < WHISTLE_POOL_SIZE; i++) {
+      const audio = new Audio(WHISTLE_AUDIO_SRC);
+      audio.preload = 'auto';
+      whistleAudioPool.push(audio);
+    }
+  }
+
+  if (goalCheerAudioPool.length === 0) {
+    for (let i = 0; i < GOAL_CHEER_POOL_SIZE; i++) {
+      const audio = new Audio(GOAL_CHEER_AUDIO_SRC);
+      audio.preload = 'auto';
+      goalCheerAudioPool.push(audio);
+    }
+  }
+
+  const unlock = () => {
+    const context = getSharedAudioContext();
+    if (context && context.state === 'suspended') {
+      context.resume().catch(() => {});
+    }
+    decodeNativeAudioBuffers();
+
+    for (const el of audioElementsPool) {
+      try {
+        el.load();
+      } catch {
+        // Ignore
+      }
+    }
+    for (const el of keeperHitAudioPool) {
+      try {
+        el.load();
+      } catch {
+        // Ignore
+      }
+    }
+    for (const el of whistleAudioPool) {
+      try {
+        el.load();
+      } catch {
+        // Ignore
+      }
+    }
+    for (const el of goalCheerAudioPool) {
+      try {
+        el.load();
+      } catch {
+        // Ignore
+      }
+    }
+  };
+
+  const interactionEvents = ['pointerdown', 'touchstart', 'mousedown', 'click', 'keydown'];
+  const handler = () => {
+    unlock();
+  };
+
+  interactionEvents.forEach((evt) => {
+    window.addEventListener(evt, handler, { capture: true, passive: true });
+  });
+}
+
+/**
+ * Preloads the audio files in background.
+ */
+export function preloadAudioBuffer() {
+  if (typeof window === 'undefined') return;
+  initAudioUnlockListener();
+  decodeNativeAudioBuffers();
+}
+
+/**
+ * Synthesizes a punchy authentic soccer ball strike in Web Audio API as an ultra-fast supplementary layer.
+ */
+function playSyntheticKickImpact(ctx: AudioContext, normPower: number) {
+  const now = ctx.currentTime;
+  const masterInput = getMasterAudioInput();
+  if (!masterInput) return;
+
+  // 1. Deep Sub-bass Thump (ball core/bladder compression: 110Hz -> 38Hz)
+  const oscThump = ctx.createOscillator();
+  const gainThump = ctx.createGain();
+  oscThump.type = 'sine';
+  const startFreq = 100 + normPower * 35;
+  oscThump.frequency.setValueAtTime(startFreq, now);
+  oscThump.frequency.exponentialRampToValueAtTime(36, now + 0.08);
+
+  gainThump.gain.setValueAtTime(normPower * 0.85, now);
+  gainThump.gain.exponentialRampToValueAtTime(0.001, now + 0.095);
+
+  oscThump.connect(gainThump);
+  gainThump.connect(masterInput);
+  oscThump.start(now);
+  oscThump.stop(now + 0.1);
+
+  // 2. Leather Impact Punch (casing crack: 220Hz -> 65Hz)
+  const oscPunch = ctx.createOscillator();
+  const gainPunch = ctx.createGain();
+  oscPunch.type = 'triangle';
+  oscPunch.frequency.setValueAtTime(240, now);
+  oscPunch.frequency.exponentialRampToValueAtTime(55, now + 0.045);
+
+  gainPunch.gain.setValueAtTime(normPower * 0.65, now);
+  gainPunch.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+
+  oscPunch.connect(gainPunch);
+  gainPunch.connect(masterInput);
+  oscPunch.start(now);
+  oscPunch.stop(now + 0.055);
+}
+
+/**
+ * Plays the real Soccer-kick sound with Web Audio Buffer (0ms latency), HTML5 Audio pool, and punchy impact response.
+ */
+export function playKickSound(powerRatio = 0.5) {
+  if (isAudioMutedGlobally) return;
+  const normPower = Math.max(0.35, Math.min(1.0, powerRatio));
+
+  try {
+    const ctx = getSharedAudioContext();
+    let playedWithWebAudio = false;
+
+    if (ctx) {
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+
+      const masterInput = getMasterAudioInput();
+
+      if (kickAudioBuffer && masterInput) {
+        const source = ctx.createBufferSource();
+        source.buffer = kickAudioBuffer;
+
+        // Subtle natural pitch modulation based on strike power
+        source.playbackRate.value = 0.96 + normPower * 0.12;
+
+        const gainNode = ctx.createGain();
+        gainNode.gain.setValueAtTime(Math.min(1.0, normPower * 1.1), ctx.currentTime);
+
+        source.connect(gainNode);
+        gainNode.connect(masterInput);
+        source.start(ctx.currentTime);
+        playedWithWebAudio = true;
+      } else {
+        // Trigger synthetic kick sound if buffer is still decoding
+        playSyntheticKickImpact(ctx, normPower);
+      }
+    }
+
+    // Secondary fallback: HTML5 Audio pool
+    if (!playedWithWebAudio) {
+      if (audioElementsPool.length === 0) {
+        initAudioUnlockListener();
+      }
+      if (audioElementsPool.length > 0) {
+        let audioToPlay: HTMLAudioElement | null = null;
+        for (let i = 0; i < audioElementsPool.length; i++) {
+          const audio = audioElementsPool[i];
+          if (audio.paused || audio.ended) {
+            audioToPlay = audio;
+            break;
+          }
+        }
+        if (!audioToPlay) {
+          audioToPlay = audioElementsPool[nextPoolIndex];
+          nextPoolIndex = (nextPoolIndex + 1) % audioElementsPool.length;
+        }
+        if (audioToPlay) {
+          audioToPlay.currentTime = 0;
+          audioToPlay.volume = normPower;
+          const p = audioToPlay.play();
+          if (p !== undefined) {
+            p.catch(() => {});
+          }
+        }
+      }
+    }
+  } catch {
+    // Ignore
+  }
+}
+
+/**
+ * Strictly plays the uploaded Ball-hit-player.wav audio file when the ball hits
+ * the goalkeeper (saves, dives, parries, catches, fingertip tips) or player blocks.
+ */
+export function playKeeperHitSound(volume = 0.9) {
+  if (isAudioMutedGlobally) return;
+  const normVol = Math.max(0.2, Math.min(1.0, volume));
+
+  try {
+    const ctx = getSharedAudioContext();
+    let playedWithWebAudio = false;
+
+    if (ctx) {
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+
+      const masterInput = getMasterAudioInput();
+
+      if (keeperHitAudioBuffer && masterInput) {
+        const source = ctx.createBufferSource();
+        source.buffer = keeperHitAudioBuffer;
+        source.playbackRate.value = 0.98 + Math.random() * 0.06;
+
+        const gainNode = ctx.createGain();
+        gainNode.gain.setValueAtTime(normVol, ctx.currentTime);
+
+        source.connect(gainNode);
+        gainNode.connect(masterInput);
+        source.start(ctx.currentTime);
+        playedWithWebAudio = true;
+      }
+    }
+
+    if (!playedWithWebAudio) {
+      if (keeperHitAudioPool.length === 0) {
+        initAudioUnlockListener();
+      }
+      if (keeperHitAudioPool.length > 0) {
+        let audioToPlay: HTMLAudioElement | null = null;
+        for (let i = 0; i < keeperHitAudioPool.length; i++) {
+          const audio = keeperHitAudioPool[i];
+          if (audio.paused || audio.ended) {
+            audioToPlay = audio;
+            break;
+          }
+        }
+        if (!audioToPlay) {
+          audioToPlay = keeperHitAudioPool[nextKeeperPoolIndex];
+          nextKeeperPoolIndex = (nextKeeperPoolIndex + 1) % keeperHitAudioPool.length;
+        }
+        if (audioToPlay) {
+          audioToPlay.currentTime = 0;
+          audioToPlay.volume = normVol;
+          const p = audioToPlay.play();
+          if (p !== undefined) {
+            p.catch(() => {});
+          }
+        }
+      }
+    }
+  } catch {
+    // Ignore
+  }
+}
+
+export const playBallHitPlayerSound = playKeeperHitSound;
+
+/**
+ * Plays the uploaded Whistle.mp3 audio file when the kicker is about to play the ball.
+ */
+export function playWhistleSound(volume = 0.75) {
+  if (isAudioMutedGlobally) return;
+  const normVol = Math.max(0.1, Math.min(1.0, volume));
+
+  try {
+    const ctx = getSharedAudioContext();
+    let playedWithWebAudio = false;
+
+    if (ctx) {
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+
+      const masterInput = getMasterAudioInput();
+
+      if (whistleAudioBuffer && masterInput) {
+        const source = ctx.createBufferSource();
+        source.buffer = whistleAudioBuffer;
+
+        const gainNode = ctx.createGain();
+        gainNode.gain.setValueAtTime(normVol, ctx.currentTime);
+
+        source.connect(gainNode);
+        gainNode.connect(masterInput);
+        source.start(ctx.currentTime);
+        playedWithWebAudio = true;
+      }
+    }
+
+    if (!playedWithWebAudio) {
+      if (whistleAudioPool.length === 0) {
+        initAudioUnlockListener();
+      }
+      if (whistleAudioPool.length > 0) {
+        let audioToPlay: HTMLAudioElement | null = null;
+        for (let i = 0; i < whistleAudioPool.length; i++) {
+          const audio = whistleAudioPool[i];
+          if (audio.paused || audio.ended) {
+            audioToPlay = audio;
+            break;
+          }
+        }
+        if (!audioToPlay) {
+          audioToPlay = whistleAudioPool[nextWhistlePoolIndex];
+          nextWhistlePoolIndex = (nextWhistlePoolIndex + 1) % whistleAudioPool.length;
+        }
+        if (audioToPlay) {
+          audioToPlay.currentTime = 0;
+          audioToPlay.volume = normVol;
+          const p = audioToPlay.play();
+          if (p !== undefined) {
+            p.catch(() => {});
+          }
+        }
+      }
+    }
+  } catch {}
+}
+
+export const playRefereeWhistle = playWhistleSound;
+
+/**
+ * Plays the uploaded Goalcheer.mp3 audio file when a goal is scored.
+ */
+export function playGoalCheerSound(volume = 0.85) {
+  if (isAudioMutedGlobally) return;
+  const normVol = Math.max(0.1, Math.min(1.0, volume));
+
+  try {
+    const ctx = getSharedAudioContext();
+    let playedWithWebAudio = false;
+
+    if (ctx) {
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+
+      const masterInput = getMasterAudioInput();
+
+      if (goalCheerAudioBuffer && masterInput) {
+        const source = ctx.createBufferSource();
+        source.buffer = goalCheerAudioBuffer;
+
+        const gainNode = ctx.createGain();
+        gainNode.gain.setValueAtTime(normVol, ctx.currentTime);
+
+        source.connect(gainNode);
+        gainNode.connect(masterInput);
+        source.start(ctx.currentTime);
+
+        const entry = { source, gain: gainNode };
+        activeGoalCheerWebAudio.push(entry);
+
+        source.onended = () => {
+          activeGoalCheerWebAudio = activeGoalCheerWebAudio.filter((e) => e !== entry);
+        };
+
+        playedWithWebAudio = true;
+      }
+    }
+
+    if (!playedWithWebAudio) {
+      if (goalCheerAudioPool.length === 0) {
+        initAudioUnlockListener();
+      }
+      if (goalCheerAudioPool.length > 0) {
+        let audioToPlay: HTMLAudioElement | null = null;
+        for (let i = 0; i < goalCheerAudioPool.length; i++) {
+          const audio = goalCheerAudioPool[i];
+          if (audio.paused || audio.ended) {
+            audioToPlay = audio;
+            break;
+          }
+        }
+        if (!audioToPlay) {
+          audioToPlay = goalCheerAudioPool[nextGoalCheerPoolIndex];
+          nextGoalCheerPoolIndex = (nextGoalCheerPoolIndex + 1) % goalCheerAudioPool.length;
+        }
+        if (audioToPlay) {
+          audioToPlay.currentTime = 0;
+          audioToPlay.volume = normVol;
+          const p = audioToPlay.play();
+          if (p !== undefined) {
+            p.catch(() => {});
+          }
+        }
+      }
+    }
+  } catch {}
+}
+
+export const playGoalSound = playGoalCheerSound;
+
+/**
+ * Stops any playing goal cheer sound immediately (e.g., when positions reset or replay ends).
+ */
+export function stopGoalCheerSound() {
+  try {
+    const ctx = getSharedAudioContext();
+    if (ctx && activeGoalCheerWebAudio.length > 0) {
+      const now = ctx.currentTime;
+      for (const item of activeGoalCheerWebAudio) {
+        try {
+          item.gain.gain.setTargetAtTime(0.0001, now, 0.04);
+          item.source.stop(now + 0.08);
+        } catch {}
+      }
+      activeGoalCheerWebAudio = [];
+    }
+
+    for (const audio of goalCheerAudioPool) {
+      try {
+        if (!audio.paused) {
+          audio.pause();
+          audio.currentTime = 0;
+        }
+      } catch {}
+    }
+  } catch {}
+}
+
+export const stopGoalSound = stopGoalCheerSound;
+
+/**
+ * Target hit sound disabled
+ */
+export function playTargetHitSound(_isBullseye = false) {
+  // Disabled
+}
+
+/**
+ * Superpower sound disabled
+ */
+export function playSuperpowerSound(_powerType: string) {
+  // Disabled
+}
+
+// Auto-run unlock listener on module import
+if (typeof window !== 'undefined') {
+  initAudioUnlockListener();
+}
+
+/**
+ * Button click sound.
+ */
+export function playButtonClickSound(volume = 0.12) {
+  if (isAudioMutedGlobally) return;
+  try {
+    const ctx = getSharedAudioContext();
+    if (!ctx) return;
+    const masterInput = getMasterAudioInput();
+    if (!masterInput) return;
+    const now = ctx.currentTime;
+
+    const oscThud = ctx.createOscillator();
+    const gainThud = ctx.createGain();
+    oscThud.type = 'sine';
+    oscThud.frequency.setValueAtTime(140, now);
+    oscThud.frequency.exponentialRampToValueAtTime(45, now + 0.035);
+
+    gainThud.gain.setValueAtTime(volume * 0.8, now);
+    gainThud.gain.exponentialRampToValueAtTime(0.001, now + 0.038);
+
+    oscThud.connect(gainThud);
+    gainThud.connect(masterInput);
+    oscThud.start(now);
+    oscThud.stop(now + 0.04);
+  } catch {
+    // Ignore audio context errors
+  }
+}
+
+/**
+ * Clean audio cue for locking aim and power (disabled as requested).
+ */
+export function playLockAimSound(_volume = 0.25) {
+  // Power meter sounds completely silenced as requested
+}
+
+/**
+ * Global UI interaction listener: Automatically plays satisfying click sound on all button clicks
+ */
+if (typeof window !== 'undefined') {
+  let lastClickSoundTime = 0;
+  window.addEventListener(
+    'pointerdown',
+    (e) => {
+      try {
+        const target = (e.target as HTMLElement)?.closest(
+          'button, [role="button"], input[type="button"], input[type="submit"], a[href], .cursor-pointer'
+        );
+        if (target) {
+          // Debounce rapid multi-touches within 45ms to avoid clipping
+          const now = Date.now();
+          if (now - lastClickSoundTime > 45) {
+            lastClickSoundTime = now;
+            playButtonClickSound(0.24);
+          }
+        }
+      } catch {}
+    },
+    { capture: true, passive: true }
+  );
+}
+

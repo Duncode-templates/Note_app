@@ -1,0 +1,40 @@
+{
+  "entities": {
+    "OnlineMatchRoom": {
+      "title": "Online Match Room",
+      "description": "Multiplayer match room containing player info, match status, score, timer, and rematch state",
+      "type": "object",
+      "properties": {
+        "roomId": { "type": "string", "description": "Unique 6-character room code" },
+        "status": { "type": "string", "description": "Current room state: waiting, selecting_country, starting, ready, playing, finished, opponent_left" },
+        "gameMode": { "type": "string", "description": "Match, penalty shootout, or division match mode" },
+        "division": { "type": "number", "description": "Division level tier for division matchmaking" },
+        "currentKickerRole": { "type": "string", "description": "Role of the active kicker (host or guest)" },
+        "turn": { "type": "number", "description": "Current turn number" },
+        "matchTime": { "type": "number", "description": "Synchronized match time remaining in seconds" },
+        "score": {
+          "type": "object",
+          "description": "Live scoreboard host and guest points"
+        },
+        "host": {
+          "type": "object",
+          "description": "Host player profile and country selection"
+        },
+        "guest": {
+          "type": "object",
+          "description": "Guest player profile and country selection"
+        },
+        "rematchRequestedBy": { "type": "string", "description": "Player role requesting rematch" },
+        "isOpponentDisconnected": { "type": "boolean", "description": "True if one peer has disconnected" },
+        "updatedAt": { "type": "number", "description": "Last update timestamp" }
+      },
+      "required": ["roomId", "status", "host"]
+    }
+  },
+  "firestore": {
+    "/rooms/{roomId}": {
+      "schema": "OnlineMatchRoom",
+      "description": "Active multiplayer match rooms"
+    }
+  }
+}

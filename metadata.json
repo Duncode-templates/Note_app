@@ -1,0 +1,6 @@
+{
+  "name": "Free Kick Legends",
+  "description": "3D arcade football free-kick experience featuring a 500-Level Intelligent Target Smash & Scenario Campaign with AI Comeback matches, Survival 3-Lives Mode, Arcade Superpowers, Dynamic Wind, World Cup Tournament, and Online 1v1 Multiplayer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
