@@ -1717,6 +1717,7 @@ export default function Stadium3DView({
   const powerStatusTextRef = useRef<HTMLDivElement | null>(null);
   const isHoldingPowerRef = useRef<boolean>(false);
   const powerHoldStartTimeRef = useRef<number>(0);
+  const inputDownTimestampRef = useRef<number>(0);
   const lastVibrateMilestoneRef = useRef<number>(0);
 
   // High-performance Oscillator Timing Refs (synchronized directly in 60 FPS main loop)
@@ -2871,10 +2872,42 @@ export default function Stadium3DView({
     turnStartTimeRef.current = Date.now();
   };
 
+  // Executes final strike with intelligent swerve and trajectory
+  const executeShotNow = (overridePower?: number) => {
+    if (currentTurnRef.current !== 'player' || shotPhaseRef.current !== 'idle' || isGameOver) return;
+    isHoldingPowerRef.current = false;
+    stopPowerChargeAudio();
+
+    const finalPower = overridePower !== undefined
+      ? overridePower
+      : Math.max(18, Math.min(100, currentPowerRef.current || 50));
+    lockedPowerRef.current = finalPower;
+    setPower(finalPower);
+
+    // Automatic Intelligent Curve based on goalkeeper, wall, aim, and power
+    const smartCurve = calculateIntelligentCurve(
+      lockedAimRef.current ?? 0.5,
+      finalPower,
+      fkBallPosRef.current,
+      gkReadyXRef.current || 0,
+      wallDefendersRef.current[0]?.position.x,
+      fkDistance,
+      fkXOffset
+    );
+    lockedCurveRef.current = smartCurve;
+    currentCurveRef.current = smartCurve;
+    setCurveAmount(smartCurve);
+    setSetupStep('kicking');
+    setupStepRef.current = 'kicking';
+    triggerShotWithPower();
+  };
+
   // Start charging power (locks aim if in 'aim' step, then charges power meter)
   const handleStartCharge = () => {
     if (currentTurnRef.current !== 'player' || shotPhaseRef.current !== 'idle' || isGameOver) return;
     if (isInputLocked() || isReplayActiveRef.current) return;
+
+    inputDownTimestampRef.current = performance.now();
 
     if (setupStepRef.current === 'aim') {
       const aimVal = currentAimRef.current ?? 0.5;
@@ -2893,6 +2926,7 @@ export default function Stadium3DView({
       currentPowerRef.current = 0;
       isHoldingPowerRef.current = true;
       powerHoldStartTimeRef.current = performance.now();
+      powerStartTimeRef.current = performance.now();
       lastVibrateMilestoneRef.current = 0;
       startPowerChargeAudio();
 
@@ -2903,7 +2937,7 @@ export default function Stadium3DView({
         powerLevelBadgeRef.current.className = 'text-[10px] sm:text-xs font-black px-2 py-0.5 rounded-full bg-slate-200 text-black border border-black shadow-sm';
       }
       if (powerStatusTextRef.current) {
-        powerStatusTextRef.current.textContent = 'CHARGING POWER...';
+        powerStatusTextRef.current.textContent = 'CHARGING POWER... (HOLD OR TAP)';
         powerStatusTextRef.current.className = 'text-center text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-wide mt-1.5';
       }
       if (powerCardRef.current) {
@@ -2912,10 +2946,8 @@ export default function Stadium3DView({
       }
     } else if (setupStepRef.current === 'power') {
       if (!isHoldingPowerRef.current) {
-        isHoldingPowerRef.current = true;
-        powerHoldStartTimeRef.current = performance.now() - ((currentPowerRef.current || 0) / 100) * 1200;
-        lastVibrateMilestoneRef.current = currentPowerRef.current || 0;
-        startPowerChargeAudio();
+        // If the meter is already oscillating in step-by-step mode, pressing or clicking immediately locks power and kicks!
+        executeShotNow();
       }
     }
   };
@@ -2925,29 +2957,20 @@ export default function Stadium3DView({
     if (currentTurnRef.current !== 'player' || shotPhaseRef.current !== 'idle' || isGameOver) return;
 
     if (setupStepRef.current === 'power' && isHoldingPowerRef.current) {
-      isHoldingPowerRef.current = false;
-      stopPowerChargeAudio();
-
-      const finalPower = Math.max(18, Math.min(100, currentPowerRef.current || 25));
-      lockedPowerRef.current = finalPower;
-      setPower(finalPower);
-
-      // Automatic Intelligent Curve based on goalkeeper, wall, aim, and power
-      const smartCurve = calculateIntelligentCurve(
-        lockedAimRef.current ?? 0.5,
-        finalPower,
-        fkBallPosRef.current,
-        gkReadyXRef.current || 0,
-        wallDefendersRef.current[0]?.position.x,
-        fkDistance,
-        fkXOffset
-      );
-      lockedCurveRef.current = smartCurve;
-      currentCurveRef.current = smartCurve;
-      setCurveAmount(smartCurve);
-      setSetupStep('kicking');
-      setupStepRef.current = 'kicking';
-      triggerShotWithPower();
+      const holdDuration = performance.now() - (inputDownTimestampRef.current || 0);
+      if (holdDuration >= 180) {
+        // User held down to charge power -> release executes the shot immediately
+        executeShotNow();
+      } else {
+        // User tapped to lock aim -> keep power meter smoothly oscillating so they can tap again or press Spacebar to lock power
+        isHoldingPowerRef.current = false;
+        powerStartTimeRef.current = performance.now();
+        stopPowerChargeAudio();
+        if (powerStatusTextRef.current) {
+          powerStatusTextRef.current.textContent = 'PRESS SPACEBAR / CLICK TO LOCK POWER & KICK';
+          powerStatusTextRef.current.className = 'text-center text-[9px] sm:text-[10px] font-black text-amber-600 uppercase tracking-wide mt-1.5 animate-pulse';
+        }
+      }
     }
   };
 
@@ -2960,7 +2983,7 @@ export default function Stadium3DView({
       if (setupStepRef.current === 'aim') {
         handleStartCharge();
       } else if (setupStepRef.current === 'power') {
-        handleReleaseCharge();
+        executeShotNow();
       }
     } else if (setupStep === 'finished') {
       resetToDefaultState();
@@ -3745,15 +3768,37 @@ export default function Stadium3DView({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (showResultsModal || showSurvivalGameOver || showExitModal) return;
 
+      // Skip replay on space / enter
+      if (isReplayActiveRef.current) {
+        if (e.key === ' ' || e.key === 'Enter' || e.code === 'Space' || e.code === 'Enter') {
+          e.preventDefault();
+          lastSceneSkipTimestampRef.current = Date.now();
+          lockInputTemporarily(600);
+          stopReplayAndAdvance();
+          return;
+        }
+      }
+
+      // Fast forward celebration if goal celebration is playing
+      if (shotPhaseRef.current === 'finished' && shotFinishedTimeRef.current > 0 && Date.now() - shotFinishedTimeRef.current > 400) {
+        if (e.key === ' ' || e.key === 'Enter' || e.code === 'Space' || e.code === 'Enter') {
+          e.preventDefault();
+          lastSceneSkipTimestampRef.current = Date.now();
+          lockInputTemporarily(600);
+          advanceToNextTurn();
+          return;
+        }
+      }
+
       if (shotPhaseRef.current === 'flying') {
-        // IN-FLIGHT AFTERTOUCH (Real-time Magnus swerve & dip)
-        if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a') {
+        // IN-FLIGHT AFTERTOUCH (Real-time Magnus swerve & dip via Arrow keys and WASD)
+        if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a' || e.code === 'KeyA') {
           aftertouchVecRef.current.x = Math.max(-1.0, aftertouchVecRef.current.x - 0.40);
-        } else if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') {
+        } else if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd' || e.code === 'KeyD') {
           aftertouchVecRef.current.x = Math.min(1.0, aftertouchVecRef.current.x + 0.40);
-        } else if (e.key === 'ArrowUp' || e.key.toLowerCase() === 'w') {
+        } else if (e.key === 'ArrowUp' || e.key.toLowerCase() === 'w' || e.code === 'KeyW') {
           aftertouchVecRef.current.y = Math.min(1.0, aftertouchVecRef.current.y + 0.35);
-        } else if (e.key === 'ArrowDown' || e.key.toLowerCase() === 's') {
+        } else if (e.key === 'ArrowDown' || e.key.toLowerCase() === 's' || e.code === 'KeyS') {
           aftertouchVecRef.current.y = Math.max(-1.0, aftertouchVecRef.current.y - 0.35);
         }
         if (swerveDisplayRef.current) {
@@ -3766,17 +3811,34 @@ export default function Stadium3DView({
           onlineMatchManager.syncAftertouch(aftertouchVecRef.current.x, aftertouchVecRef.current.y);
         }
       } else if (shotPhaseRef.current === 'idle' && currentTurnRef.current === 'player') {
-        if (e.key === ' ' || e.key === 'Enter') {
+        // Manual Aim Nudge with Arrow keys or A/D during Aim phase
+        if (setupStepRef.current === 'aim') {
+          if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a' || e.code === 'KeyA') {
+            currentAimRef.current = Math.max(0.08, (currentAimRef.current ?? 0.5) - 0.04);
+            setAimProgress(currentAimRef.current);
+          } else if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd' || e.code === 'KeyD') {
+            currentAimRef.current = Math.min(0.92, (currentAimRef.current ?? 0.5) + 0.04);
+            setAimProgress(currentAimRef.current);
+          }
+        }
+
+        if (e.key === ' ' || e.key === 'Enter' || e.code === 'Space' || e.code === 'Enter') {
           e.preventDefault();
           if (!e.repeat) {
-            handleStartCharge();
+            if (setupStepRef.current === 'aim') {
+              handleStartCharge();
+            } else if (setupStepRef.current === 'power') {
+              if (!isHoldingPowerRef.current) {
+                executeShotNow();
+              }
+            }
           }
         }
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key === ' ' || e.key === 'Enter') {
+      if (e.key === ' ' || e.key === 'Enter' || e.code === 'Space' || e.code === 'Enter') {
         if (shotPhaseRef.current === 'idle' && currentTurnRef.current === 'player') {
           e.preventDefault();
           handleReleaseCharge();
@@ -3837,7 +3899,13 @@ export default function Stadium3DView({
     lastPointerPosRef.current = { x: e.clientX, y: e.clientY };
 
     if (currentTurn === 'player' && shotPhaseRef.current === 'idle') {
-      handleStartCharge();
+      if (setupStepRef.current === 'aim') {
+        handleStartCharge();
+      } else if (setupStepRef.current === 'power') {
+        if (!isHoldingPowerRef.current) {
+          executeShotNow();
+        }
+      }
       return;
     }
   };
@@ -4971,14 +5039,14 @@ export default function Stadium3DView({
 
     // High-Definition Crisp Pixel Ratio Optimized for High-Res Displays (Ultra-Smooth 60 FPS on all screens)
     const getTargetPixelRatio = () => {
-      const dpr = window.devicePixelRatio || 1;
-      const width = container.clientWidth || window.innerWidth;
+      const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+      const width = container ? container.clientWidth || window.innerWidth : 1200;
       // High-resolution big screen optimization:
-      // Prevents GPU fill-rate bottleneck on 4K/1440p displays while retaining pristine visual crispness
-      if (width >= 1920) return Math.min(dpr, 1.25);
-      if (width >= 1280) return Math.min(dpr, 1.35);
-      if (width >= 768) return Math.min(dpr, 1.5);
-      return Math.min(dpr, 1.75);
+      // On 1080p, 1440p, and 4K displays, capping to 1.0 (or max 1.15 on 1080p) eliminates fillrate choke while preserving 100% native HD sharpness
+      if (width >= 1440) return Math.min(dpr, 1.0);
+      if (width >= 1024) return Math.min(dpr, 1.0);
+      if (width >= 768) return Math.min(dpr, 1.25);
+      return Math.min(dpr, 1.5);
     };
 
     // 3. Renderer (High Fidelity ACES Filmic Tone-Mapped WebGL)
@@ -5032,15 +5100,15 @@ export default function Stadium3DView({
     const sunLight = new THREE.DirectionalLight('#fffdf5', 1.88);
     sunLight.position.set(38, 65, 28);
     sunLight.castShadow = true;
-    sunLight.shadow.mapSize.width = 1536;
-    sunLight.shadow.mapSize.height = 1536;
+    sunLight.shadow.mapSize.width = 1024;
+    sunLight.shadow.mapSize.height = 1024;
     sunLight.shadow.camera.near = 12;
     sunLight.shadow.camera.far = 145;
     sunLight.shadow.camera.left = -34;
     sunLight.shadow.camera.right = 34;
     sunLight.shadow.camera.top = 38;
     sunLight.shadow.camera.bottom = -48;
-    sunLight.shadow.bias = -0.0002;
+    sunLight.shadow.bias = -0.0003;
     sunLight.shadow.normalBias = 0.02;
     sunLight.shadow.radius = 1.8; // Soft shadow edge dispersion
     scene.add(sunLight);
@@ -6121,50 +6189,61 @@ export default function Stadium3DView({
           const aimVal = 0.08 + aimSmoothed * 0.84;
           currentAimRef.current = aimVal;
         } else if (step === 'power') {
-          // Power Meter Charges up dynamically when user is holding the screen/key
+          let pVal: number;
           if (isHoldingPowerRef.current) {
             const elapsed = now - powerHoldStartTimeRef.current;
             const chargeDuration = 1200; // 1.2s to reach 100%
-            const pVal = Math.min(100, Math.max(0, Math.round((elapsed / chargeDuration) * 100)));
-            currentPowerRef.current = pVal;
+            pVal = Math.min(100, Math.max(0, Math.round((elapsed / chargeDuration) * 100)));
+          } else {
+            // Smoothly oscillate power back and forth between 18% and 100% for tap/click-based timing
+            const powerOscElapsed = (now - (powerStartTimeRef.current || now)) % 1500;
+            const norm = powerOscElapsed / 1500;
+            const tri = norm <= 0.5 ? norm * 2 : (1 - norm) * 2;
+            const smoothed = (Math.sin((tri - 0.5) * Math.PI) + 1) / 2;
+            pVal = Math.round(18 + smoothed * 82);
+          }
+          currentPowerRef.current = pVal;
 
-            // Real-time audio pitch & harmonic modulation
+          // Real-time audio pitch & harmonic modulation (active when holding)
+          if (isHoldingPowerRef.current) {
             updatePowerChargeAudio(pVal);
+          }
 
-            // Dynamic tactile vibration milestones
-            if (pVal >= 33 && lastVibrateMilestoneRef.current < 33) {
-              lastVibrateMilestoneRef.current = 33;
-              if (navigator.vibrate) navigator.vibrate(10);
-            } else if (pVal >= 68 && lastVibrateMilestoneRef.current < 68) {
-              lastVibrateMilestoneRef.current = 68;
-              if (navigator.vibrate) navigator.vibrate(18);
-            } else if (pVal >= 88 && lastVibrateMilestoneRef.current < 88) {
-              lastVibrateMilestoneRef.current = 88;
-              if (navigator.vibrate) navigator.vibrate([15, 20, 15]);
-            } else if (pVal >= 100 && lastVibrateMilestoneRef.current < 100) {
-              lastVibrateMilestoneRef.current = 100;
-              if (navigator.vibrate) navigator.vibrate([25, 25, 30]);
-            }
+          // Dynamic tactile vibration milestones
+          if (pVal >= 33 && lastVibrateMilestoneRef.current < 33) {
+            lastVibrateMilestoneRef.current = 33;
+            if (navigator.vibrate) navigator.vibrate(10);
+          } else if (pVal >= 68 && lastVibrateMilestoneRef.current < 68) {
+            lastVibrateMilestoneRef.current = 68;
+            if (navigator.vibrate) navigator.vibrate(18);
+          } else if (pVal >= 88 && lastVibrateMilestoneRef.current < 88) {
+            lastVibrateMilestoneRef.current = 88;
+            if (navigator.vibrate) navigator.vibrate([15, 20, 15]);
+          } else if (pVal >= 100 && lastVibrateMilestoneRef.current < 100) {
+            lastVibrateMilestoneRef.current = 100;
+            if (navigator.vibrate) navigator.vibrate([25, 25, 30]);
+          }
 
-            if (powerFillRef.current) {
-              powerFillRef.current.style.width = `${pVal}%`;
+          if (powerFillRef.current) {
+            powerFillRef.current.style.width = `${pVal}%`;
+          }
+          if (powerCursorRef.current) {
+            powerCursorRef.current.style.left = `${pVal}%`;
+          }
+          if (powerLevelBadgeRef.current) {
+            powerLevelBadgeRef.current.textContent = `${pVal}%`;
+            if (pVal >= 88) {
+              powerLevelBadgeRef.current.className = 'text-[10px] sm:text-xs font-black px-2 py-0.5 rounded-full bg-rose-500 text-white border border-black shadow-sm';
+            } else if (pVal >= 68) {
+              powerLevelBadgeRef.current.className = 'text-[10px] sm:text-xs font-black px-2 py-0.5 rounded-full bg-emerald-400 text-black border border-black shadow-sm';
+            } else if (pVal >= 35) {
+              powerLevelBadgeRef.current.className = 'text-[10px] sm:text-xs font-black px-2 py-0.5 rounded-full bg-amber-400 text-black border border-black shadow-sm';
+            } else {
+              powerLevelBadgeRef.current.className = 'text-[10px] sm:text-xs font-black px-2 py-0.5 rounded-full bg-slate-200 text-black border border-black shadow-sm';
             }
-            if (powerCursorRef.current) {
-              powerCursorRef.current.style.left = `${pVal}%`;
-            }
-            if (powerLevelBadgeRef.current) {
-              powerLevelBadgeRef.current.textContent = `${pVal}%`;
-              if (pVal >= 88) {
-                powerLevelBadgeRef.current.className = 'text-[10px] sm:text-xs font-black px-2 py-0.5 rounded-full bg-rose-500 text-white border border-black shadow-sm';
-              } else if (pVal >= 68) {
-                powerLevelBadgeRef.current.className = 'text-[10px] sm:text-xs font-black px-2 py-0.5 rounded-full bg-emerald-400 text-black border border-black shadow-sm';
-              } else if (pVal >= 35) {
-                powerLevelBadgeRef.current.className = 'text-[10px] sm:text-xs font-black px-2 py-0.5 rounded-full bg-amber-400 text-black border border-black shadow-sm';
-              } else {
-                powerLevelBadgeRef.current.className = 'text-[10px] sm:text-xs font-black px-2 py-0.5 rounded-full bg-slate-200 text-black border border-black shadow-sm';
-              }
-            }
-            if (powerStatusTextRef.current) {
+          }
+          if (powerStatusTextRef.current) {
+            if (isHoldingPowerRef.current) {
               if (pVal >= 88) {
                 powerStatusTextRef.current.textContent = '🔥 MAXIMUM ROCKET POWER!';
                 powerStatusTextRef.current.className = 'text-center text-[9px] sm:text-[10px] font-black text-rose-600 uppercase tracking-wide mt-1.5 animate-pulse';
@@ -6178,20 +6257,23 @@ export default function Stadium3DView({
                 powerStatusTextRef.current.textContent = 'CHARGING POWER...';
                 powerStatusTextRef.current.className = 'text-center text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-wide mt-1.5';
               }
+            } else {
+              powerStatusTextRef.current.textContent = 'PRESS SPACEBAR / CLICK TO LOCK POWER & KICK';
+              powerStatusTextRef.current.className = 'text-center text-[9px] sm:text-[10px] font-black text-amber-600 uppercase tracking-wide mt-1.5 animate-pulse';
             }
-            if (powerCardRef.current) {
-              if (pVal >= 88) {
-                const shakeX = (Math.random() - 0.5) * 2.5;
-                const shakeY = (Math.random() - 0.5) * 2.5;
-                powerCardRef.current.style.transform = `translate3d(${shakeX}px, ${shakeY}px, 0)`;
-                powerCardRef.current.style.boxShadow = '0 0 25px rgba(239, 68, 68, 0.65), 0 6px 0 0 #000';
-              } else if (pVal >= 68) {
-                powerCardRef.current.style.transform = 'translate3d(0, 0, 0)';
-                powerCardRef.current.style.boxShadow = '0 0 20px rgba(16, 185, 129, 0.55), 0 6px 0 0 #000';
-              } else {
-                powerCardRef.current.style.transform = 'translate3d(0, 0, 0)';
-                powerCardRef.current.style.boxShadow = '0 6px 0 0 #000';
-              }
+          }
+          if (powerCardRef.current) {
+            if (pVal >= 88) {
+              const shakeX = (Math.random() - 0.5) * 2.5;
+              const shakeY = (Math.random() - 0.5) * 2.5;
+              powerCardRef.current.style.transform = `translate3d(${shakeX}px, ${shakeY}px, 0)`;
+              powerCardRef.current.style.boxShadow = '0 0 25px rgba(239, 68, 68, 0.65), 0 6px 0 0 #000';
+            } else if (pVal >= 68) {
+              powerCardRef.current.style.transform = 'translate3d(0, 0, 0)';
+              powerCardRef.current.style.boxShadow = '0 0 20px rgba(16, 185, 129, 0.55), 0 6px 0 0 #000';
+            } else {
+              powerCardRef.current.style.transform = 'translate3d(0, 0, 0)';
+              powerCardRef.current.style.boxShadow = '0 6px 0 0 #000';
             }
           }
         }
@@ -7299,9 +7381,10 @@ export default function Stadium3DView({
 
     const targetFov = getAdaptiveCameraFov(aspect);
 
-    // Desktop/landscape and mobile portrait: shifted backwards and upwards for optimal pitch depth and kicker visibility
-    const camBackDist = isLandscape ? 14.5 : 12.8;
-    const camHeight = isLandscape ? 5.8 : 4.6;
+    // On big screen / desktop: shifted camera backwards a bit (from 14.5m to 17.2m-18.2m) and a very little bit downwards (from 5.8m to 4.9m-5.1m)
+    const isBigScreen = isLandscape || cWidth >= 1024;
+    const camBackDist = isBigScreen ? (cWidth >= 1600 ? 18.2 : 17.2) : 12.8;
+    const camHeight = isBigScreen ? (cWidth >= 1600 ? 4.9 : 5.1) : 4.6;
 
     // Position camera behind the ball along the shot line
     const camPos = fkBallPos.clone().sub(dirToGoal.clone().multiplyScalar(camBackDist));
@@ -7309,10 +7392,10 @@ export default function Stadium3DView({
 
     // Camera look-at target: focused straight down the shot trajectory towards the wall and goal mouth
     let targetPos: THREE.Vector3;
-    if (isLandscape) {
+    if (isBigScreen) {
       const lookAheadDist = Math.min(18.0, Math.max(9.0, fkBallPos.distanceTo(goalCenter) * 0.48));
       targetPos = fkBallPos.clone().add(dirToGoal.clone().multiplyScalar(lookAheadDist));
-      targetPos.y = 1.35;
+      targetPos.y = 1.25;
     } else {
       targetPos = fkBallPos.clone().add(dirToGoal.clone().multiplyScalar(10.0));
       targetPos.y = 1.05;
@@ -8656,11 +8739,11 @@ export default function Stadium3DView({
                 className="w-full flex items-center justify-center gap-1.5 bg-gradient-to-r from-amber-400 via-amber-300 to-emerald-400 hover:from-amber-300 hover:to-emerald-300 active:scale-95 text-black py-2 px-2.5 rounded-[13px] border-[2px] border-black shadow-[0_2.5px_0_0_#000] font-black text-[10.5px] sm:text-xs uppercase tracking-wider cursor-pointer transition-all mt-0.5"
               >
                 <Target className="w-3.5 h-3.5 text-black shrink-0 fill-black/20" />
-                <span>LOCK &amp; HOLD POWER</span>
+                <span>LOCK AIM (SPACEBAR / CLICK)</span>
               </button>
 
               <div className="text-center text-[7.5px] sm:text-[8px] font-bold text-slate-500 uppercase tracking-tight">
-                OR HOLD SCREEN / SPACEBAR
+                HOLD SCREEN / SPACEBAR TO CHARGE
               </div>
             </motion.div>
           ) : setupStep === 'power' ? (
@@ -8718,16 +8801,24 @@ export default function Stadium3DView({
                 <span>MAX</span>
               </div>
 
+              {/* Action Button to Lock Power & Kick */}
+              <button
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  executeShotNow();
+                }}
+                className="w-full flex items-center justify-center gap-1.5 bg-gradient-to-r from-emerald-400 via-amber-300 to-amber-400 hover:from-emerald-300 hover:to-amber-300 active:scale-95 text-black py-1.5 px-2.5 rounded-[12px] border-[2px] border-black shadow-[0_2px_0_0_#000] font-black text-[10px] sm:text-xs uppercase tracking-wider cursor-pointer transition-all mt-1.5"
+              >
+                <Zap className="w-3.5 h-3.5 text-black shrink-0 fill-black" />
+                <span>LOCK &amp; KICK (SPACEBAR)</span>
+              </button>
+
               {/* Live Status Text */}
               <div
                 ref={powerStatusTextRef}
                 className="text-center text-[8px] sm:text-[8.5px] font-black text-slate-500 uppercase tracking-tight mt-1"
               >
                 CHARGING POWER...
-              </div>
-
-              <div className="text-center text-[7.5px] sm:text-[8px] font-black text-amber-600 uppercase tracking-tight mt-0.5 animate-pulse">
-                RELEASE TO STRIKE!
               </div>
             </motion.div>
           ) : null}
