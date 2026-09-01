@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Play, ShoppingCart, X, Target, Coins, User, Flame, Zap, Swords } from 'lucide-react';
+import { Play, ShoppingCart, X, Target, Coins, User, Flame, Zap, Swords, Wifi, Video, Bookmark } from 'lucide-react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faFutbol, faBullseye, faDumbbell, faFire, faCrosshairs } from '@fortawesome/free-solid-svg-icons';
-import { MenuItemId, GameMode, OnlineMatchRoom } from './types';
+import { MenuItemId, GameMode, OnlineMatchRoom, SavedReplay } from './types';
 import CountrySelectionPage from './components/CountrySelectionPage';
 import OnlineCountrySelectionPage from './components/OnlineCountrySelectionPage';
 import TournamentTeamSelectionPage from './components/TournamentTeamSelectionPage';
 import TournamentHubPage from './components/TournamentHubPage';
 import StorePage from './components/StorePage';
+import SavedReplaysPage from './components/SavedReplaysPage';
 import Stadium3DView from './components/Stadium3DView';
 import OnlineMatchModal from './components/OnlineMatchModal';
 import SurvivalHubModal from './components/SurvivalHubModal';
@@ -33,10 +34,11 @@ import {
 } from './data/tournamentData';
 import { initAudioUnlockListener, preloadAudioBuffer, preloadImage } from './utils/mediaPreloader';
 import { onlineMatchManager } from './utils/onlineMatchManager';
+import { savedReplayManager } from './utils/savedReplayManager';
 import { crazyGamesSDK } from './utils/crazyGamesSDK';
 
 type ModalType = 'quick_play' | 'tournament' | 'practice' | null;
-type ViewState = 'menu' | 'country_selection' | 'online_country_selection' | 'tournament_selection' | 'tournament_hub' | 'stadium' | 'store';
+type ViewState = 'menu' | 'country_selection' | 'online_country_selection' | 'tournament_selection' | 'tournament_hub' | 'stadium' | 'store' | 'saved_replays';
 
 const COINS_DATA_KEY = 'crazygames_user_coins';
 const UNLOCKED_BALLS_KEY = 'fkl_unlocked_balls_v1';
@@ -124,6 +126,8 @@ export default function App() {
   const [isWagerArenaModalOpen, setIsWagerArenaModalOpen] = useState(false);
   const [isSurvivalModalOpen, setIsSurvivalModalOpen] = useState(false);
   const [bestSurvivalStreak, setBestSurvivalStreak] = useState<number>(() => loadInitialSurvivalBest());
+  const [activeSavedReplay, setActiveSavedReplay] = useState<SavedReplay | null>(null);
+  const [savedReplaysCount, setSavedReplaysCount] = useState<number>(() => savedReplayManager.getReplays().length);
   const [isTournamentComingSoonOpen, setIsTournamentComingSoonOpen] = useState(false);
   const [isAdsComingSoonOpen, setIsAdsComingSoonOpen] = useState(false);
   const [currentView, setCurrentView] = useState<ViewState>('menu');
@@ -133,6 +137,14 @@ export default function App() {
   const [opponentCountry, setOpponentCountry] = useState<Country | null>(null);
   const [coins, setCoins] = useState<number>(() => loadInitialCoins());
   const [activeOnlineRoom, setActiveOnlineRoom] = useState<OnlineMatchRoom | null>(null);
+
+  // Subscribe to Saved Replays updates
+  useEffect(() => {
+    const unsubscribe = savedReplayManager.subscribe((replays) => {
+      setSavedReplaysCount(replays.length);
+    });
+    return unsubscribe;
+  }, []);
 
   // Store Customization States (Loaded from CrazyGames SDK Data Module)
   const [unlockedBallIds, setUnlockedBallIds] = useState<string[]>(() => loadInitialUnlockedBalls());
@@ -484,11 +496,15 @@ export default function App() {
         activeTournamentMatch={isTournament ? activeTournamentMatch : null}
         equippedBallId={equippedBallId}
         equippedPitchId={equippedPitchId}
+        savedReplayClip={activeSavedReplay}
         onEarnCoins={(amount) => {
           updateCoins((prev) => prev + amount);
         }}
         onBack={() => {
-          if (activeOnlineRoom) {
+          if (activeSavedReplay) {
+            setActiveSavedReplay(null);
+            setCurrentView('saved_replays');
+          } else if (activeOnlineRoom) {
             onlineMatchManager.leaveRoom();
             setActiveOnlineRoom(null);
             setCurrentView('menu');
@@ -499,6 +515,11 @@ export default function App() {
           }
         }}
         onReselectTeam={() => {
+          if (activeSavedReplay) {
+            setActiveSavedReplay(null);
+            setCurrentView('saved_replays');
+            return;
+          }
           if (activeOnlineRoom) {
             const wasWager = Boolean(activeOnlineRoom.wagerTier);
             onlineMatchManager.leaveRoom();
@@ -600,6 +621,32 @@ export default function App() {
     );
   }
 
+  if (currentView === 'saved_replays') {
+    return (
+      <SavedReplaysPage
+        playerName={playerName}
+        userProfilePicture={userProfilePicture}
+        coins={coins}
+        bestSurvivalStreak={bestSurvivalStreak}
+        onBack={() => setCurrentView('menu')}
+        onQuickPlay={() => {
+          setModeContext('Quick Play - Offline');
+          setGameMode('match');
+          setCurrentView('country_selection');
+        }}
+        onPlayReplay={(replay) => {
+          setActiveSavedReplay(replay);
+          const kicker = COUNTRIES_DATA.find((c) => c.code === replay.kickerCountryCode) || COUNTRIES_DATA[0];
+          const defender = COUNTRIES_DATA.find((c) => c.code === replay.opponentCountryCode) || COUNTRIES_DATA[1];
+          setSelectedCountry(kicker);
+          setOpponentCountry(defender);
+          setModeContext(`Replay • ${replay.kickerCountryName} vs ${replay.opponentCountryName}`);
+          setCurrentView('stadium');
+        }}
+      />
+    );
+  }
+
   if (currentView === 'country_selection') {
     return (
       <CountrySelectionPage
@@ -627,16 +674,29 @@ export default function App() {
           </span>
         </div>
 
-        {/* +50 ADS Button */}
+        {/* +50 COINS Video Ads Button */}
         <motion.button
           whileHover={{ scale: 1.05, y: -2 }}
           whileTap={{ scale: 0.95, y: 1 }}
-          onClick={() => setIsAdsComingSoonOpen(true)}
+          onClick={() => {
+            crazyGamesSDK.requestAd('rewarded', {
+              adStarted: () => {},
+              adFinished: () => {
+                updateCoins((prev) => prev + 50);
+              },
+              adError: () => {
+                setIsAdsComingSoonOpen(true);
+              },
+            }).catch(() => {
+              setIsAdsComingSoonOpen(true);
+            });
+          }}
           className="bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-400 hover:from-amber-300 hover:to-yellow-200 border-[3px] md:border-[4px] lg:border-[4.5px] border-black shadow-[0_5px_0_0_#000] md:shadow-[0_7px_0_0_#000] lg:shadow-[0_9px_0_0_#000] rounded-full px-3 sm:px-4 md:px-5 lg:px-6 py-1.5 sm:py-2 md:py-2.5 lg:py-3.5 flex items-center gap-1.5 sm:gap-2 cursor-pointer select-none outline-none"
-          title="Watch ads for +50 free coins"
+          title="Watch video ad for +50 free coins"
         >
+          <Video className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 text-black fill-black shrink-0" />
           <span className="font-black text-xs sm:text-sm md:text-base lg:text-lg text-black uppercase tracking-wider whitespace-nowrap">
-            +50 ADS
+            +50 COINS
           </span>
         </motion.button>
       </motion.div>
@@ -701,6 +761,15 @@ export default function App() {
                 </span>
               </div>
             </div>
+
+            {/* Small Network Online Icon on the right (shifted downwards) */}
+            <div
+              className="flex items-center gap-1 bg-slate-100 text-slate-800 border-[1.5px] border-black rounded-full px-2 sm:px-2.5 py-1 text-[9px] sm:text-[10px] font-black uppercase tracking-wider shadow-2xs shrink-0 translate-y-1.5 sm:translate-y-2 mt-auto"
+              title="Online Multiplayer Available"
+            >
+              <Wifi className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600 stroke-[2.5]" />
+              <span className="hidden xs:inline">ONLINE</span>
+            </div>
           </motion.button>
 
           {/* Survival Mode (NEW Game Mode) */}
@@ -737,8 +806,19 @@ export default function App() {
                 </span>
               </div>
             </div>
-            <div className="hidden xs:flex items-center gap-1 bg-white/90 px-2.5 py-1 rounded-full border-[2px] border-black font-black text-xs text-black uppercase">
-              <span>🔥 STREAK</span>
+
+            {/* Right Controls: Network Online Icon & Streak Badge (shifted downwards) */}
+            <div className="flex items-center gap-1.5 shrink-0 translate-y-1.5 sm:translate-y-2 mt-auto">
+              <div
+                className="flex items-center gap-1 bg-emerald-500 text-white border-[1.5px] border-black rounded-full px-2 sm:px-2.5 py-1 text-[9px] sm:text-[10px] font-black uppercase tracking-wider shadow-2xs"
+                title="Online 1v1 Survival Available"
+              >
+                <Wifi className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-white stroke-[2.5]" />
+                <span className="hidden xs:inline">ONLINE</span>
+              </div>
+              <div className="hidden xs:flex items-center gap-1 bg-white/90 px-2.5 py-1 rounded-full border-[2px] border-black font-black text-xs text-black uppercase">
+                <span>🔥 STREAK</span>
+              </div>
             </div>
           </motion.button>
 
@@ -763,22 +843,28 @@ export default function App() {
                 <Swords className="w-6 h-6 sm:w-7 sm:h-7 text-black" />
               </div>
               <div className="flex flex-col">
-                <div className="flex items-center gap-2">
-                  <span className="text-lg sm:text-xl md:text-2xl font-black text-black uppercase tracking-wider">
-                    COIN WAGER ARENA
-                  </span>
-                  <span className="bg-rose-500 text-white font-black text-[9px] sm:text-[10px] px-2 py-0.5 rounded-full border border-black uppercase tracking-wider">
-                    ONLINE 1V1
-                  </span>
-                </div>
+                <span className="text-lg sm:text-xl md:text-2xl font-black text-black uppercase tracking-wider">
+                  COIN WAGER ARENA
+                </span>
                 <span className="text-[11px] sm:text-xs md:text-sm font-bold text-amber-950 uppercase tracking-wider">
-                  Bet Coins • Winner Takes Entire Pot 💰
+                  Bet Coins • Winner Takes Entire Pot
                 </span>
               </div>
             </div>
-            <div className="hidden xs:flex items-center gap-1.5 bg-black text-amber-300 px-3 py-1.5 rounded-full border-[2px] border-black font-black text-xs uppercase shadow-xs">
-              <Coins className="w-3.5 h-3.5 text-amber-300" />
-              <span>DUEL</span>
+
+            {/* Right Controls: Network Online Icon & Duel Badge (shifted downwards) */}
+            <div className="flex items-center gap-1.5 shrink-0 translate-y-1.5 sm:translate-y-2 mt-auto">
+              <div
+                className="flex items-center gap-1 bg-black text-emerald-400 border-[1.5px] border-black rounded-full px-2 sm:px-2.5 py-1 text-[9px] sm:text-[10px] font-black uppercase tracking-wider shadow-2xs"
+                title="Online 1v1 Coin Wager Match"
+              >
+                <Wifi className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400 stroke-[2.5]" />
+                <span className="hidden xs:inline">ONLINE</span>
+              </div>
+              <div className="hidden xs:flex items-center gap-1.5 bg-black text-amber-300 px-3 py-1.5 rounded-full border-[2px] border-black font-black text-xs uppercase shadow-xs">
+                <Coins className="w-3.5 h-3.5 text-amber-300" />
+                <span>DUEL</span>
+              </div>
             </div>
           </motion.button>
 
@@ -845,12 +931,16 @@ export default function App() {
           </motion.button>
         </motion.div>
 
-        {/* User Profile Card (Independent, compact card below the menu buttons) */}
+        {/* User Profile Card (Clickable to view Profile & Saved Replays) */}
         <motion.div
           initial={{ opacity: 0, y: 20, scale: 0.95 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ delay: 0.35, type: 'spring', stiffness: 400, damping: 24 }}
-          className="mt-4 sm:mt-5 bg-white/95 backdrop-blur-md border-[3px] border-black shadow-[0_4px_0_0_#000] rounded-[18px] sm:rounded-[20px] px-3.5 sm:px-4 py-2 sm:py-2.5 flex items-center gap-2.5 sm:gap-3"
+          whileHover={{ scale: 1.03, y: -2 }}
+          whileTap={{ scale: 0.97 }}
+          onClick={() => setCurrentView('saved_replays')}
+          className="mt-4 sm:mt-5 bg-white/95 hover:bg-white backdrop-blur-md border-[3px] border-black shadow-[0_4px_0_0_#000] hover:shadow-[0_6px_0_0_#000] rounded-[18px] sm:rounded-[20px] px-3.5 sm:px-4 py-2 sm:py-2.5 flex items-center gap-2.5 sm:gap-3 cursor-pointer transition-all group"
+          title="Click to view Profile and Saved Replays"
         >
           {/* Profile Picture (Avatar) */}
           <div className="relative shrink-0">
@@ -867,12 +957,38 @@ export default function App() {
               </div>
             )}
             <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 border-[1.5px] border-white rounded-full shadow-xs" />
+
+            {/* Red Notification Icon on Avatar if Saved Replays exist */}
+            {savedReplaysCount > 0 && (
+              <span
+                className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-rose-600 border-[1.5px] border-white rounded-full flex items-center justify-center shadow-xs animate-pulse"
+                title={`${savedReplaysCount} Saved Replays`}
+              >
+                <Video className="w-2 h-2 text-white fill-white" />
+              </span>
+            )}
           </div>
 
-          {/* Player Name */}
-          <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-black">
-            {playerName}
-          </span>
+          {/* Player Name & Saved Replays prompt */}
+          <div className="flex flex-col text-left">
+            <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-black">
+              {playerName}
+            </span>
+            <span className="text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wider text-slate-500 group-hover:text-amber-600 transition-colors">
+              SAVED REPLAYS &amp; STATS →
+            </span>
+          </div>
+
+          {/* Red Saved Replays Icon & Counter Badge on Profile UI if user has saved replays */}
+          {savedReplaysCount > 0 && (
+            <div
+              className="ml-auto flex items-center gap-1 bg-rose-600 hover:bg-rose-500 text-white rounded-full px-2 py-0.5 border-[1.5px] border-black shadow-xs shrink-0"
+              title={`${savedReplaysCount} Saved Replay${savedReplaysCount > 1 ? 's' : ''}`}
+            >
+              <Video className="w-3 h-3 fill-white text-white" />
+              <span className="text-[10px] font-black tracking-tight">{savedReplaysCount}</span>
+            </div>
+          )}
         </motion.div>
       </div>
 
@@ -1244,17 +1360,18 @@ export default function App() {
                 <CoinIcon className="w-16 h-16 sm:w-20 sm:h-20 relative z-10 drop-shadow-[0_8px_16px_rgba(0,0,0,0.25)]" />
               </div>
 
-              {/* Coming Soon Badge */}
+              {/* Coming Soon / Info Badge */}
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-amber-400 to-yellow-300 border-[2px] border-black shadow-[0_2px_0_0_#000] text-black font-black text-xs uppercase tracking-wider mb-2">
-                <span>COMING SOON</span>
+                <Video className="w-3.5 h-3.5 fill-black text-black" />
+                <span>VIDEO REWARD</span>
               </div>
 
               {/* Title & Tagline */}
               <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-wider text-black mb-1.5">
-                +50 ADS REWARD
+                +50 COINS REWARD
               </h2>
               <p className="text-slate-600 text-xs sm:text-sm font-bold uppercase tracking-wider mb-5">
-                Watch video ads to earn free coins
+                Watch video ads to earn +50 free coins
               </p>
 
               {/* Info Box */}

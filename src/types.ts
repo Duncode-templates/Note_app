@@ -154,3 +154,41 @@ export interface OnlineRematchPayload {
   role: 'host' | 'guest';
   status: 'requested' | 'accepted' | 'declined';
 }
+
+export interface EntitySnapshot {
+  pos: [number, number, number];
+  rot: [number, number, number];
+  leftLegRot?: [number, number, number];
+  rightLegRot?: [number, number, number];
+  leftArmRot?: [number, number, number];
+  rightArmRot?: [number, number, number];
+  headRot?: [number, number, number];
+}
+
+export interface ReplayFrame {
+  time: number; // ms from kick start
+  ball: {
+    pos: [number, number, number];
+    rot: [number, number, number];
+  };
+  kicker: EntitySnapshot;
+  gk: EntitySnapshot;
+  wall: EntitySnapshot[];
+  boxPlayers: EntitySnapshot[];
+  goalVibePos?: [number, number, number];
+}
+
+export interface SavedReplay {
+  id: string;
+  createdAt: number;
+  formattedDate: string;
+  distance: number;
+  isGoal: boolean;
+  outcomeText: string;
+  kickerCountryCode: string;
+  kickerCountryName: string;
+  opponentCountryCode: string;
+  opponentCountryName: string;
+  gameMode?: string;
+  frames: ReplayFrame[];
+}

@@ -203,6 +203,7 @@ class CrazyGamesManager {
         'fkl_custom_kits_v2',
         'fkl_survival_best_streak_v1',
         'fkl_survival_guide_seen_v1',
+        'fkl_saved_replays_v1',
       ];
 
       for (const key of knownKeys) {

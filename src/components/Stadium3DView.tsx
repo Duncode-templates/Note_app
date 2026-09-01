@@ -11,7 +11,8 @@ import { STICKERS, getOutcomeSticker } from '../assets/stickers';
 import { getStickerAvatarUrl } from '../data/botProfiles';
 import { BALL_TEXTURE_ITEMS, PITCH_PATTERN_ITEMS } from '../data/storeItems';
 import { renderBallTextureToContext } from '../utils/ballTextureGenerator';
-import { GameMode, OnlineMatchRoom, OnlineShotPayload, OnlineTurnAdvancePayload, OnlineShotOutcomePayload, SuperpowerType } from '../types';
+import { GameMode, OnlineMatchRoom, OnlineShotPayload, OnlineTurnAdvancePayload, OnlineShotOutcomePayload, SuperpowerType, SavedReplay, ReplayFrame, EntitySnapshot } from '../types';
+import { savedReplayManager } from '../utils/savedReplayManager';
 import { onlineMatchManager } from '../utils/onlineMatchManager';
 import { WAGER_TIERS } from '../data/wagerArenas';
 import {
@@ -50,6 +51,7 @@ interface Stadium3DViewProps {
   equippedBallId?: string;
   equippedPitchId?: string;
   onEarnCoins?: (amount: number) => void;
+  savedReplayClip?: SavedReplay | null;
 }
 
 export interface FreeKickPosition {
@@ -650,6 +652,7 @@ export default function Stadium3DView({
   equippedBallId = 'aero_tricolor_pro',
   equippedPitchId = 'classic_stripes',
   onEarnCoins,
+  savedReplayClip,
 }: Stadium3DViewProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
@@ -1089,10 +1092,63 @@ export default function Stadium3DView({
   const [showExitModal, setShowExitModal] = useState<boolean>(false);
 
   // 3D Stadium Scene Loading Screen State & Progress
-  const [sceneLoading, setSceneLoading] = useState<boolean>(true);
-  const [loadingProgress, setLoadingProgress] = useState<number>(0);
+  const [sceneLoading, setSceneLoading] = useState<boolean>(!savedReplayClip);
+  const [loadingProgress, setLoadingProgress] = useState<number>(savedReplayClip ? 100 : 0);
+  const isSavedReplayModeRef = useRef<boolean>(Boolean(savedReplayClip));
 
   useEffect(() => {
+    isSavedReplayModeRef.current = Boolean(savedReplayClip);
+  }, [savedReplayClip]);
+
+  useEffect(() => {
+    if (savedReplayClip) {
+      setLoadingProgress(100);
+      setSceneLoading(false);
+      crazyGamesSDK.loadingStop();
+      crazyGamesSDK.gameplayStart();
+
+      if (savedReplayClip.frames && savedReplayClip.frames.length > 1) {
+        setFkDistance(savedReplayClip.distance || 25);
+        activeReplayClipRef.current = [...savedReplayClip.frames];
+        const totalDuration = savedReplayClip.frames[savedReplayClip.frames.length - 1].time;
+        const cleanDuration = Math.max(200, totalDuration);
+        replayDurationRef.current = cleanDuration;
+        setReplayDuration(cleanDuration);
+        replayPlayheadTimeRef.current = 0;
+        setReplayPlayheadTime(0);
+        replayIndexRef.current = 1;
+        setReplayIndex(1);
+        replayCamAngleRef.current = 'ball_tracking';
+        setReplayCamAngle('ball_tracking');
+        userInteractedWithReplayCamRef.current = false;
+        isReplayPausedRef.current = false;
+        setIsReplayPaused(false);
+        replaySpeedRef.current = 0.65;
+        setReplaySpeed(0.65);
+        isReplayActiveRef.current = true;
+        setIsReplayActive(true);
+
+        setTimeout(() => {
+          if (cameraRef.current && controlsRef.current && savedReplayClip.frames[0]) {
+            const origSpotX = savedReplayClip.frames[0]?.ball?.pos[0] ?? 0;
+            const origSpotZ = savedReplayClip.frames[0]?.ball?.pos[2] ?? (-42.0 + (savedReplayClip.distance || 25));
+            cameraRef.current.position.set(origSpotX * 0.35, 3.8, origSpotZ + 7.5);
+            controlsRef.current.target.set(origSpotX * 0.35, 1.2, origSpotZ - 10.0);
+            cameraRef.current.fov = 48;
+            cameraRef.current.updateProjectionMatrix();
+            controlsRef.current.enabled = false;
+            controlsRef.current.enableRotate = false;
+            controlsRef.current.enableZoom = false;
+            controlsRef.current.enablePan = false;
+            controlsRef.current.update();
+          }
+        }, 100);
+      }
+      return () => {
+        crazyGamesSDK.gameplayStop();
+      };
+    }
+
     crazyGamesSDK.loadingStart();
     
     // If this is a Wager Arena match, deduct the entry fee from the user at match start
@@ -1847,11 +1903,29 @@ export default function Stadium3DView({
 
   const [isSavedToast, setIsSavedToast] = useState<boolean>(false);
 
-  const handleSaveReplay = () => {
+  const handleSaveReplay = async () => {
+    if (activeReplayClipRef.current.length < 2) return;
     setIsSavedToast(true);
+    try {
+      const kickerCountry = currentTurn === 'player' ? country : (opponentCountry || COUNTRIES_DATA[0]);
+      const defendingCountry = currentTurn === 'player' ? (opponentCountry || COUNTRIES_DATA[0]) : country;
+      await savedReplayManager.saveReplay({
+        distance: fkDistance,
+        isGoal: isGoalScoredRef.current,
+        outcomeText: isGoalScoredRef.current ? 'GOAL' : (shotOutcomeRef.current?.toUpperCase() || 'SAVED'),
+        kickerCountryCode: kickerCountry.code,
+        kickerCountryName: kickerCountry.name,
+        opponentCountryCode: defendingCountry.code,
+        opponentCountryName: defendingCountry.name,
+        gameMode: isSurvival ? 'Survival' : isWorldCupMatch ? 'World Cup' : isWagerMatch ? 'Wager Arena' : isOnlineMatch ? 'Online 1v1' : isPracticeMode ? 'Training' : 'Free Kick',
+        frames: [...activeReplayClipRef.current],
+      });
+    } catch (err) {
+      console.warn('Failed to save replay to storage:', err);
+    }
     setTimeout(() => {
       setIsSavedToast(false);
-    }, 2000);
+    }, 2500);
   };
 
   const snapshotPlayer = (player: THREE.Group): EntitySnapshot => {
@@ -2880,7 +2954,7 @@ export default function Stadium3DView({
 
     const finalPower = overridePower !== undefined
       ? overridePower
-      : Math.max(18, Math.min(100, currentPowerRef.current || 50));
+      : Math.max(18, Math.min(100, currentPowerRef.current || 25));
     lockedPowerRef.current = finalPower;
     setPower(finalPower);
 
@@ -2923,21 +2997,21 @@ export default function Stadium3DView({
 
       setSetupStep('power');
       setupStepRef.current = 'power';
-      currentPowerRef.current = 0;
+      currentPowerRef.current = 18;
       isHoldingPowerRef.current = true;
       powerHoldStartTimeRef.current = performance.now();
       powerStartTimeRef.current = performance.now();
       lastVibrateMilestoneRef.current = 0;
       startPowerChargeAudio();
 
-      if (powerFillRef.current) powerFillRef.current.style.width = '0%';
-      if (powerCursorRef.current) powerCursorRef.current.style.left = '0%';
+      if (powerFillRef.current) powerFillRef.current.style.width = '18%';
+      if (powerCursorRef.current) powerCursorRef.current.style.left = '18%';
       if (powerLevelBadgeRef.current) {
-        powerLevelBadgeRef.current.textContent = '0%';
+        powerLevelBadgeRef.current.textContent = '18%';
         powerLevelBadgeRef.current.className = 'text-[10px] sm:text-xs font-black px-2 py-0.5 rounded-full bg-slate-200 text-black border border-black shadow-sm';
       }
       if (powerStatusTextRef.current) {
-        powerStatusTextRef.current.textContent = 'CHARGING POWER... (HOLD OR TAP)';
+        powerStatusTextRef.current.textContent = 'CHARGING POWER... RELEASE TO STRIKE!';
         powerStatusTextRef.current.className = 'text-center text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-wide mt-1.5';
       }
       if (powerCardRef.current) {
@@ -2946,8 +3020,9 @@ export default function Stadium3DView({
       }
     } else if (setupStepRef.current === 'power') {
       if (!isHoldingPowerRef.current) {
-        // If the meter is already oscillating in step-by-step mode, pressing or clicking immediately locks power and kicks!
-        executeShotNow();
+        isHoldingPowerRef.current = true;
+        powerHoldStartTimeRef.current = performance.now() - ((currentPowerRef.current || 18) / 100) * 1200;
+        startPowerChargeAudio();
       }
     }
   };
@@ -2956,21 +3031,8 @@ export default function Stadium3DView({
   const handleReleaseCharge = () => {
     if (currentTurnRef.current !== 'player' || shotPhaseRef.current !== 'idle' || isGameOver) return;
 
-    if (setupStepRef.current === 'power' && isHoldingPowerRef.current) {
-      const holdDuration = performance.now() - (inputDownTimestampRef.current || 0);
-      if (holdDuration >= 180) {
-        // User held down to charge power -> release executes the shot immediately
-        executeShotNow();
-      } else {
-        // User tapped to lock aim -> keep power meter smoothly oscillating so they can tap again or press Spacebar to lock power
-        isHoldingPowerRef.current = false;
-        powerStartTimeRef.current = performance.now();
-        stopPowerChargeAudio();
-        if (powerStatusTextRef.current) {
-          powerStatusTextRef.current.textContent = 'PRESS SPACEBAR / CLICK TO LOCK POWER & KICK';
-          powerStatusTextRef.current.className = 'text-center text-[9px] sm:text-[10px] font-black text-amber-600 uppercase tracking-wide mt-1.5 animate-pulse';
-        }
-      }
+    if (setupStepRef.current === 'power') {
+      executeShotNow();
     }
   };
 
@@ -3811,27 +3873,10 @@ export default function Stadium3DView({
           onlineMatchManager.syncAftertouch(aftertouchVecRef.current.x, aftertouchVecRef.current.y);
         }
       } else if (shotPhaseRef.current === 'idle' && currentTurnRef.current === 'player') {
-        // Manual Aim Nudge with Arrow keys or A/D during Aim phase
-        if (setupStepRef.current === 'aim') {
-          if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a' || e.code === 'KeyA') {
-            currentAimRef.current = Math.max(0.08, (currentAimRef.current ?? 0.5) - 0.04);
-            setAimProgress(currentAimRef.current);
-          } else if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd' || e.code === 'KeyD') {
-            currentAimRef.current = Math.min(0.92, (currentAimRef.current ?? 0.5) + 0.04);
-            setAimProgress(currentAimRef.current);
-          }
-        }
-
         if (e.key === ' ' || e.key === 'Enter' || e.code === 'Space' || e.code === 'Enter') {
           e.preventDefault();
           if (!e.repeat) {
-            if (setupStepRef.current === 'aim') {
-              handleStartCharge();
-            } else if (setupStepRef.current === 'power') {
-              if (!isHoldingPowerRef.current) {
-                executeShotNow();
-              }
-            }
+            handleStartCharge();
           }
         }
       }
@@ -5795,6 +5840,13 @@ export default function Stadium3DView({
                 replayIndexRef.current = 2;
                 setReplayIndex(2);
                 switchReplayAngle('behind_goal');
+                replayPlayheadTimeRef.current = 0;
+                setReplayPlayheadTime(0);
+              } else if (isSavedReplayModeRef.current) {
+                // Loop back to Replay 1 for continuous highlight loop in saved replay viewer
+                replayIndexRef.current = 1;
+                setReplayIndex(1);
+                switchReplayAngle('ball_tracking');
                 replayPlayheadTimeRef.current = 0;
                 setReplayPlayheadTime(0);
               } else {
@@ -8544,7 +8596,7 @@ export default function Stadium3DView({
               <div className="flex items-center gap-1.5 bg-slate-950/90 text-white border-[2.5px] md:border-[3px] border-black rounded-[12px] md:rounded-[14px] px-2.5 sm:px-3.5 py-1 sm:py-1.5 shadow-[0_3px_0_0_#000] backdrop-blur-md">
                 <span className={`w-2 h-2 rounded-full border border-white ${isReplayPaused ? 'bg-amber-400' : 'bg-rose-500 animate-pulse'}`} />
                 <span className="font-black text-[10px] sm:text-xs md:text-xs tracking-widest text-white uppercase">
-                  {isReplayPaused ? 'PAUSED' : 'REPLAY'} {replayIndex}/2 • {
+                  {savedReplayClip ? 'SAVED HIGHLIGHT • ' : ''}{isReplayPaused ? 'PAUSED' : 'REPLAY'} {replayIndex}/2 • {
                     replayCamAngle === 'ball_tracking'
                       ? 'BALL TRACKING'
                       : 'BEHIND GOAL'
@@ -8553,47 +8605,64 @@ export default function Stadium3DView({
               </div>
             </div>
 
-            {/* TOP RIGHT: Replay Actions (Save & Skip Buttons) */}
+            {/* TOP RIGHT: Replay Actions (Save & Skip Buttons OR Exit Button) */}
             <div
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
               className="absolute top-2.5 right-2.5 sm:top-4 sm:right-4 md:top-4.5 md:right-4.5 z-40 flex items-center gap-2 pointer-events-auto select-none"
             >
-              <button
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleSaveReplay();
-                }}
-                className="flex items-center gap-1 bg-amber-400 hover:bg-amber-300 active:scale-95 text-black font-black text-[10px] sm:text-xs md:text-xs uppercase tracking-wider px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-[12px] md:rounded-[14px] border-[2.5px] md:border-[3px] border-black shadow-[0_3px_0_0_#000] cursor-pointer transition-all"
-                title="Save Replay Moment"
-              >
-                {isSavedToast ? (
-                  <>
-                    <Check className="w-3.5 h-3.5" />
-                    <span>SAVED</span>
-                  </>
-                ) : (
-                  <>
-                    <Bookmark className="w-3.5 h-3.5" />
-                    <span>SAVE</span>
-                  </>
-                )}
-              </button>
+              {savedReplayClip ? (
+                <button
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onBack();
+                  }}
+                  className="flex items-center gap-1.5 bg-rose-500 hover:bg-rose-400 active:scale-95 text-white font-black text-[10px] sm:text-xs md:text-xs uppercase tracking-wider px-3 sm:px-4 py-1.5 sm:py-2 rounded-[12px] md:rounded-[14px] border-[2.5px] md:border-[3px] border-black shadow-[0_3px_0_0_#000] cursor-pointer transition-all"
+                  title="Exit Replay Viewer"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>EXIT REPLAY</span>
+                </button>
+              ) : (
+                <>
+                  <button
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSaveReplay();
+                    }}
+                    className="flex items-center gap-1 bg-amber-400 hover:bg-amber-300 active:scale-95 text-black font-black text-[10px] sm:text-xs md:text-xs uppercase tracking-wider px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-[12px] md:rounded-[14px] border-[2.5px] md:border-[3px] border-black shadow-[0_3px_0_0_#000] cursor-pointer transition-all"
+                    title="Save Replay Moment"
+                  >
+                    {isSavedToast ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 stroke-[3]" />
+                        <span>SAVED</span>
+                      </>
+                    ) : (
+                      <>
+                        <Bookmark className="w-3.5 h-3.5" />
+                        <span>SAVE</span>
+                      </>
+                    )}
+                  </button>
 
-              <button
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  lastSceneSkipTimestampRef.current = Date.now();
-                  stopReplayAndAdvance();
-                }}
-                className="flex items-center gap-1 bg-white hover:bg-slate-100 active:scale-95 text-black font-black text-[10px] sm:text-xs md:text-xs uppercase tracking-wider px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-[12px] md:rounded-[14px] border-[2.5px] md:border-[3px] border-black shadow-[0_3px_0_0_#000] cursor-pointer transition-all"
-                title="Skip Replay"
-              >
-                <FastForward className="w-3.5 h-3.5 fill-black" />
-                <span>SKIP</span>
-              </button>
+                  <button
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      lastSceneSkipTimestampRef.current = Date.now();
+                      stopReplayAndAdvance();
+                    }}
+                    className="flex items-center gap-1 bg-white hover:bg-slate-100 active:scale-95 text-black font-black text-[10px] sm:text-xs md:text-xs uppercase tracking-wider px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-[12px] md:rounded-[14px] border-[2.5px] md:border-[3px] border-black shadow-[0_3px_0_0_#000] cursor-pointer transition-all"
+                    title="Skip Replay"
+                  >
+                    <FastForward className="w-3.5 h-3.5 fill-black" />
+                    <span>SKIP</span>
+                  </button>
+                </>
+              )}
             </div>
 
             {/* BOTTOM LEFT: Broadcast Card with Flag, Team Name, Distance Meter, and Goalkeeper Profile */}
@@ -8738,12 +8807,12 @@ export default function Stadium3DView({
                 }}
                 className="w-full flex items-center justify-center gap-1.5 bg-gradient-to-r from-amber-400 via-amber-300 to-emerald-400 hover:from-amber-300 hover:to-emerald-300 active:scale-95 text-black py-2 px-2.5 rounded-[13px] border-[2px] border-black shadow-[0_2.5px_0_0_#000] font-black text-[10.5px] sm:text-xs uppercase tracking-wider cursor-pointer transition-all mt-0.5"
               >
-                <Target className="w-3.5 h-3.5 text-black shrink-0 fill-black/20" />
-                <span>LOCK AIM (SPACEBAR / CLICK)</span>
+                <Flame className="w-3.5 h-3.5 text-black shrink-0 fill-black" />
+                <span>HOLD TO CHARGE POWER</span>
               </button>
 
               <div className="text-center text-[7.5px] sm:text-[8px] font-bold text-slate-500 uppercase tracking-tight">
-                HOLD SCREEN / SPACEBAR TO CHARGE
+                HOLD SPACEBAR / SCREEN • RELEASE TO STRIKE
               </div>
             </motion.div>
           ) : setupStep === 'power' ? (
@@ -8801,16 +8870,16 @@ export default function Stadium3DView({
                 <span>MAX</span>
               </div>
 
-              {/* Action Button to Lock Power & Kick */}
+              {/* Action Button to Strike */}
               <button
-                onPointerDown={(e) => {
+                onPointerUp={(e) => {
                   e.stopPropagation();
                   executeShotNow();
                 }}
                 className="w-full flex items-center justify-center gap-1.5 bg-gradient-to-r from-emerald-400 via-amber-300 to-amber-400 hover:from-emerald-300 hover:to-amber-300 active:scale-95 text-black py-1.5 px-2.5 rounded-[12px] border-[2px] border-black shadow-[0_2px_0_0_#000] font-black text-[10px] sm:text-xs uppercase tracking-wider cursor-pointer transition-all mt-1.5"
               >
                 <Zap className="w-3.5 h-3.5 text-black shrink-0 fill-black" />
-                <span>LOCK &amp; KICK (SPACEBAR)</span>
+                <span>RELEASE TO STRIKE!</span>
               </button>
 
               {/* Live Status Text */}
