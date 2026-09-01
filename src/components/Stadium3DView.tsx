@@ -1902,9 +1902,13 @@ export default function Stadium3DView({
   };
 
   const [isSavedToast, setIsSavedToast] = useState<boolean>(false);
+  const [isCurrentReplaySaved, setIsCurrentReplaySaved] = useState<boolean>(false);
+  const isCurrentReplaySavedRef = useRef<boolean>(false);
 
   const handleSaveReplay = async () => {
-    if (activeReplayClipRef.current.length < 2) return;
+    if (isCurrentReplaySavedRef.current || activeReplayClipRef.current.length < 2) return;
+    isCurrentReplaySavedRef.current = true;
+    setIsCurrentReplaySaved(true);
     setIsSavedToast(true);
     try {
       const kickerCountry = currentTurn === 'player' ? country : (opponentCountry || COUNTRIES_DATA[0]);
@@ -2445,14 +2449,20 @@ export default function Stadium3DView({
       aiTimer = setTimeout(() => {
         if (currentTurnRef.current !== 'ai' || isPausedRef.current || isGameOverRef.current) return;
 
+        // Match & Mode-Specific AI Goal Cap & Tactical Shot Calibration:
+        // Strict Maximum Cap enforced per mode (e.g. max 3 goals in Quick Play, Survival, Wager, World Cup Final; max 2 in World Cup Group/KO).
+        const isCapMode = (isWorldCupMatch || isBotMatch || isWagerMatch || isSurvival || (!isOnlineMatch && !isPenaltyScenario && !isPracticeMode));
+        const maxAllowedAiGoals = getAiMaxGoalCap();
+        const currentAiScore = awayScoreRef.current;
+        const isAiAtMaxGoalCap = isCapMode && currentAiScore >= maxAllowedAiGoals;
+
         // Check for attacking teammates in the box with dangerous goal positioning
         const attackingTeammates = boxPlayersRef.current.filter(
           (p) => p && p.userData?.teamRole === 'attacker' && p.position.z < -25.0 && Math.abs(p.position.x) < 14.0
         );
 
         // AI kicker tactically evaluates whether an open teammate has an unobstructed strike channel
-        const isAiOnConsecutiveStreak = aiConsecutiveGoalsRef.current >= 1;
-        const passChance = isAiOnConsecutiveStreak ? 0.0 : 0.20;
+        const passChance = isCapMode && isAiAtMaxGoalCap ? 0.0 : 0.20;
         const willPassToTeammate =
           !isPenaltyScenario &&
           attackingTeammates.length > 0 &&
@@ -2467,7 +2477,7 @@ export default function Stadium3DView({
           const span = getAimTargetSpan(ballPos.z, -42.0);
 
           // Passing accuracy with natural human variance
-          const passJitter = (Math.random() - 0.5) * 0.85;
+          const passJitter = (Math.random() - 0.5) * 0.35;
 
           // Project line through teammate to the goal line z = -42.0 to calculate aimProgress
           const dirZ = teammatePos.z - ballPos.z;
@@ -2497,35 +2507,25 @@ export default function Stadium3DView({
           let targetGoalX: number;
           const tacticRoll = Math.random();
 
-          if (isAiOnConsecutiveStreak) {
-            // Fair gameplay balance: add chance of saveable placement or slight overrun on streaks
-            const balanceRoll = Math.random();
-            if (balanceRoll < 0.60) {
-              targetGoalX = gkX + (Math.random() - 0.5) * 1.2; // saveable reach
-            } else if (balanceRoll < 0.85) {
-              targetGoalX = openSide * (3.60 + Math.random() * 0.35); // woodwork brush
-            } else {
-              targetGoalX = openSide * (2.10 + Math.random() * 0.80);
-            }
-          } else if (isSuddenDeath) {
+          if (isSuddenDeath) {
             // Sudden death: ice-cold clinical placement into unreachable corners
-            targetGoalX = openSide * (2.75 + Math.random() * 0.65);
-          } else if (tacticRoll < 0.45) {
+            targetGoalX = openSide * (2.65 + Math.random() * 0.75);
+          } else if (tacticRoll < 0.35) {
             // Tactic 1: Clinical Low Corner Placement (Side-netting)
-            targetGoalX = openSide * (2.55 + Math.random() * 0.85);
-          } else if (tacticRoll < 0.78) {
+            targetGoalX = openSide * (2.60 + Math.random() * 0.75);
+          } else if (tacticRoll < 0.68) {
             // Tactic 2: Upper 90 / Top Corner Strike
-            targetGoalX = openSide * (2.40 + Math.random() * 0.90);
-          } else if (tacticRoll < 0.92) {
+            targetGoalX = openSide * (2.50 + Math.random() * 0.80);
+          } else if (tacticRoll < 0.88) {
             // Tactic 3: Driven Opposite Cross-Shot
-            targetGoalX = -openSide * (1.80 + Math.random() * 0.90);
+            targetGoalX = -openSide * (2.10 + Math.random() * 0.85);
           } else {
             // Tactic 4: Subtle center placement if keeper committed to a side
-            targetGoalX = (Math.random() - 0.5) * 0.60;
+            targetGoalX = (Math.random() - 0.5) * 0.80;
           }
 
           // Penalty aim calibration
-          const penaltyAimJitter = (Math.random() - 0.5) * (isSuddenDeath ? 0.04 : 0.08);
+          const penaltyAimJitter = (Math.random() - 0.5) * (isSuddenDeath ? 0.03 : 0.06);
           const targetAimBase = 0.5 + targetGoalX / span;
           const smartAim = Math.max(0.08, Math.min(0.92, targetAimBase + penaltyAimJitter));
 
@@ -2539,78 +2539,48 @@ export default function Stadium3DView({
           const span = getAimTargetSpan(ballPos.z, -42.0);
           const gkX = gkReadyXRef.current || 0;
 
-          // Match & Mode-Specific AI Goal Cap & Tactical Shot Calibration:
-          // Offline Modes: Strict Maximum Cap of 3 goals (Finals/Quick Match: 3, Semi/QF: 2, Group/R16: 2).
-          // Note: These caps are maximum ceiling limits; the AI is NOT forced to reach 3 goals in every match.
-          // AI conversion rate is realistically balanced with skilled player goalkeeper saves, wall blocks, and misses.
-          const isCapMode = (isWorldCupMatch || isBotMatch || isWagerMatch || isSurvival || (!isOnlineMatch && !isPenaltyScenario && !isPracticeMode));
-          const maxAllowedAiGoals = getAiMaxGoalCap();
-          const currentAiScore = awayScoreRef.current;
-          const isAiAtMaxGoalCap = isCapMode && currentAiScore >= maxAllowedAiGoals;
-
           let targetGoalX: number;
 
           if (isAiAtMaxGoalCap) {
-            // STRICT CAP ENFORCEMENT: AI has reached its match goal limit (maximum 3 in offline mode).
-            // Produce competitive near-misses, woodwork strikes, wall blocks, or saveable shots so gameplay remains thrilling without scoring.
+            // STRICT CAP ENFORCEMENT: AI has reached its match goal limit.
+            // Produce competitive near-misses, woodwork strikes, wall blocks, or saveable shots so gameplay remains thrilling without exceeding the cap.
             const missTactic = Math.random();
-            if (missTactic < 0.45) {
+            if (missTactic < 0.40) {
               // Direct saveable shot towards the goalkeeper's ready position
-              targetGoalX = gkX + (Math.random() - 0.5) * 1.0;
-            } else if (missTactic < 0.75) {
+              targetGoalX = gkX + (Math.random() - 0.5) * 0.90;
+            } else if (missTactic < 0.70) {
               // Thrilling woodwork / post hit
               const postSide = Math.random() > 0.5 ? 1 : -1;
-              targetGoalX = postSide * (3.82 + Math.random() * 0.26);
+              targetGoalX = postSide * (3.82 + Math.random() * 0.24);
             } else {
               // Wide or sliced effort past post
               const missSide = (fkXOffset || 0) > 0 ? 1 : -1;
-              targetGoalX = missSide * (4.15 + Math.random() * 1.10);
-            }
-          } else if (isAiOnConsecutiveStreak) {
-            // AI scored on previous turn: realistic momentum check with human variance
-            const errorRoll = Math.random();
-            if (errorRoll < 0.65) {
-              targetGoalX = gkX + (Math.random() - 0.5) * 0.90;
-            } else if (errorRoll < 0.85) {
-              targetGoalX = (Math.random() > 0.5 ? 1 : -1) * (3.80 + Math.random() * 0.35);
-            } else {
-              targetGoalX = (fkXOffset || 0) * 0.65;
-            }
-          } else if (isCapMode) {
-            // Realistic scoring distribution across match turns:
-            // The AI only takes a high-danger corner shot ~16-20% of the time, allowing player goalkeeper to make authentic saves
-            const clinicalDangerThreshold = maxAllowedAiGoals <= 2 ? 0.16 : 0.20;
-            const clinicalRoll = Math.random();
-            const openSide = gkX > 0.15 ? -1 : (gkX < -0.15 ? 1 : ((fkXOffset || 0) > 0 ? -1 : (Math.random() > 0.5 ? 1 : -1)));
-
-            if (clinicalRoll < clinicalDangerThreshold) {
-              // Dangerous attempt targeting open corners
-              targetGoalX = openSide * (2.10 + Math.random() * 1.05);
-            } else if (clinicalRoll < 0.70) {
-              // Saveable on-target strike towards keeper's reach envelope
-              targetGoalX = gkX + (Math.random() - 0.5) * 1.40;
-            } else if (clinicalRoll < 0.86) {
-              // Close shave / near post test
-              targetGoalX = openSide * (3.78 + Math.random() * 0.40);
-            } else {
-              // Wide miss
-              targetGoalX = (Math.random() > 0.5 ? 1 : -1) * (4.15 + Math.random() * 0.85);
+              targetGoalX = missSide * (4.15 + Math.random() * 0.95);
             }
           } else {
-            // Online / other modes: Fair distribution
+            // UNPREDICTABLE, DYNAMIC AI SHOT GENERATION (Can score at any turn at random):
             const openSide = gkX > 0.15 ? -1 : (gkX < -0.15 ? 1 : ((fkXOffset || 0) > 0 ? -1 : (Math.random() > 0.5 ? 1 : -1)));
-            const shotStrategyRoll = Math.random();
+            const shotStyleRoll = Math.random();
 
-            if (shotStrategyRoll < 0.24) {
-              targetGoalX = openSide * (2.10 + Math.random() * 1.10);
-            } else if (shotStrategyRoll < 0.70) {
-              targetGoalX = openSide * (1.20 + Math.random() * 1.00);
+            if (shotStyleRoll < 0.32) {
+              // Style 1: Dangerous Curling Top-Corner Strike (Whipped into the side 90)
+              targetGoalX = openSide * (2.45 + Math.random() * 0.80);
+            } else if (shotStyleRoll < 0.60) {
+              // Style 2: Low Driven Drill into Side-Netting
+              targetGoalX = openSide * (2.55 + Math.random() * 0.75);
+            } else if (shotStyleRoll < 0.80) {
+              // Style 3: Far-Post Cross Goal Bender (Curling opposite keeper stance)
+              targetGoalX = -openSide * (2.15 + Math.random() * 0.85);
+            } else if (shotStyleRoll < 0.92) {
+              // Style 4: Dipping Knuckleball / Central Danger Zone
+              targetGoalX = openSide * (1.30 + Math.random() * 0.80);
             } else {
-              targetGoalX = gkX + (Math.random() - 0.5) * 1.50;
+              // Style 5: Competitive On-Target Test towards keeper
+              targetGoalX = gkX + (Math.random() - 0.5) * 1.30;
             }
           }
 
-          const humanJitter = (Math.random() - 0.5) * (isAiAtMaxGoalCap ? 0.22 : isAiOnConsecutiveStreak ? 0.18 : 0.12);
+          const humanJitter = (Math.random() - 0.5) * (isAiAtMaxGoalCap ? 0.20 : 0.08);
           const targetAimBase = 0.5 + targetGoalX / span;
           const smartAim = Math.max(0.06, Math.min(0.94, targetAimBase + humanJitter));
 
@@ -2635,9 +2605,9 @@ export default function Stadium3DView({
 
         if (aiPassedToTeammateRef.current) {
           const passPower = THREE.MathUtils.clamp(
-            Math.round(18 + (Math.random() - 0.5) * 8),
-            12,
-            26
+            Math.round(28 + (Math.random() - 0.5) * 6),
+            24,
+            34
           );
 
           lockedPowerRef.current = passPower;
@@ -2646,48 +2616,46 @@ export default function Stadium3DView({
         } else if (isPenaltyScenario) {
           // Penalty Power Calibration for 23.1m penalty spot
           const isSuddenDeath = penaltyShootout.round > 5;
-          const isAiOnConsecutiveStreak = aiConsecutiveGoalsRef.current >= 1;
           
-          // Tactical power selection for 23.1m:
-          // Standard clinical penalty: 76-84 power
-          // Top corner rocket: 86-92 power
-          // Panenka / chip: 50-56 power
           let targetPower: number;
           const powerStyleRoll = Math.random();
-          if (powerStyleRoll < 0.65) {
-            targetPower = 78 + (Math.random() - 0.5) * 8; // Driven corner
-          } else if (powerStyleRoll < 0.92) {
-            targetPower = 88 + (Math.random() - 0.5) * 6; // Upper 90 blast
+          if (powerStyleRoll < 0.60) {
+            targetPower = 78 + (Math.random() - 0.5) * 6; // Driven corner
+          } else if (powerStyleRoll < 0.90) {
+            targetPower = 86 + (Math.random() - 0.5) * 4; // Upper 90 blast
           } else {
-            targetPower = 54 + (Math.random() - 0.5) * 4; // Delicate chip
-          }
-
-          if (isAiOnConsecutiveStreak) {
-            targetPower += (Math.random() - 0.5) * 16;
+            targetPower = 74 + (Math.random() - 0.5) * 4; // Low placement
           }
 
           const smartPenaltyPower = THREE.MathUtils.clamp(
             Math.round(targetPower),
-            isAiOnConsecutiveStreak ? 50 : 64,
-            isSuddenDeath ? 92 : 94
+            70,
+            isSuddenDeath ? 92 : 88
           );
 
           lockedPowerRef.current = smartPenaltyPower;
           currentPowerRef.current = smartPenaltyPower;
           setPower(smartPenaltyPower);
         } else {
-          const isAiOnConsecutiveStreak = aiConsecutiveGoalsRef.current >= 1;
-          let baseTargetPower = 74;
-          if (fkDistance <= 22) baseTargetPower = 72;
-          else if (fkDistance <= 26) baseTargetPower = 76;
-          else if (fkDistance <= 30) baseTargetPower = 80;
-          else baseTargetPower = 84;
+          const maxAllowedAiGoals = getAiMaxGoalCap();
+          const isAiAtMaxGoalCap = awayScoreRef.current >= maxAllowedAiGoals;
 
-          const powerVariance = isAiOnConsecutiveStreak ? 20 : 14;
+          let baseTargetPower = 75;
+          if (fkDistance <= 22) baseTargetPower = 73;
+          else if (fkDistance <= 26) baseTargetPower = 76;
+          else if (fkDistance <= 30) baseTargetPower = 79;
+          else baseTargetPower = 82;
+
+          if (isAiAtMaxGoalCap && Math.random() < 0.40) {
+            // If capped, occasionally add power to soar over crossbar
+            baseTargetPower = 88 + Math.random() * 4;
+          }
+
+          const powerVariance = isAiAtMaxGoalCap ? 8 : 4;
           const smartPower = THREE.MathUtils.clamp(
             Math.round(baseTargetPower + (Math.random() - 0.5) * powerVariance),
-            isAiOnConsecutiveStreak ? 54 : 60,
-            isAiOnConsecutiveStreak ? 86 : 90
+            68,
+            88
           );
 
           lockedPowerRef.current = smartPower;
@@ -2780,6 +2748,8 @@ export default function Stadium3DView({
     runStartTimeRef.current = 0;
     hasTriggeredReplayForShotRef.current = false;
     isAdvancingTurnRef.current = false;
+    isCurrentReplaySavedRef.current = false;
+    setIsCurrentReplaySaved(false);
 
     // Reset Ball position, 1.0x scale, zero rotation and velocity
     if (ballMeshRef.current && fkBallPosRef.current) {
@@ -2833,18 +2803,17 @@ export default function Stadium3DView({
     const gkBaseRotY = Math.atan2(dirToBall.x, dirToBall.z);
 
     const isAiShooter = currentTurnRef.current === 'ai';
-    const isAiOnConsecutive = isAiShooter && aiConsecutiveGoalsRef.current >= 1;
     const isPenaltyScenario = isPenaltyTraining || isPenaltyShootoutRef.current || penaltyShootout.isActive || isPenaltyTrainingRef.current;
 
     const flawRoll = Math.random();
     let flawType: GoalkeeperFlawType = 'none';
     let reactionDelay = isAiShooter
-      ? (isPenaltyScenario ? (0.02 + Math.random() * 0.02) : (0.10 + Math.random() * 0.06))
-      : (isPenaltyScenario ? (0.03 + Math.random() * 0.03) : (0.20 + Math.random() * 0.08));
+      ? (isPenaltyScenario ? (0.012 + Math.random() * 0.018) : (0.035 + Math.random() * 0.035))
+      : (isPenaltyScenario ? (0.015 + Math.random() * 0.020) : (0.040 + Math.random() * 0.040));
     let misjudgedCurve = false;
     let flawOffset = isAiShooter
-      ? (Math.random() - 0.5) * 0.15
-      : (Math.random() - 0.5) * 0.40;
+      ? (Math.random() - 0.5) * 0.12
+      : (Math.random() - 0.5) * 0.25;
     let gambleSide = Math.random() > 0.5 ? 1 : -1;
 
     if (isAiShooter) {
@@ -2853,39 +2822,36 @@ export default function Stadium3DView({
         // Minor curve perception misread on sharp bend
         flawType = 'deceived_by_curve';
         misjudgedCurve = true;
-        flawOffset = (Math.random() - 0.5) * 0.35;
+        flawOffset = (Math.random() - 0.5) * 0.30;
       } else {
         flawType = 'none';
       }
-    } else if (!isAiOnConsecutive) {
+    } else {
       if (isPenaltyScenario) {
         // Penalty Specific Goalkeeper Behaviors (Lightning-quick reaction and dive response!)
-        if (flawRoll < 0.25) {
+        if (flawRoll < 0.20) {
           flawType = 'wrong_footed_gamble';
-          reactionDelay = 0.02 + Math.random() * 0.03;
-        } else if (flawRoll < 0.45) {
+          reactionDelay = 0.015 + Math.random() * 0.02;
+        } else if (flawRoll < 0.35) {
           flawType = 'premature_jump';
-          reactionDelay = 0.03 + Math.random() * 0.03;
-        } else if (flawRoll < 0.60) {
+          reactionDelay = 0.020 + Math.random() * 0.02;
+        } else if (flawRoll < 0.48) {
           flawType = 'fingertip_spill';
         } else {
           flawType = 'none';
         }
       } else {
-        if (flawRoll < 0.20) {
+        if (flawRoll < 0.14) {
           flawType = 'premature_jump';
-          reactionDelay = 0.12 + Math.random() * 0.06;
-        } else if (flawRoll < 0.40) {
+          reactionDelay = 0.040 + Math.random() * 0.03;
+        } else if (flawRoll < 0.28) {
           flawType = 'deceived_by_curve';
           misjudgedCurve = true;
-          flawOffset = (Math.random() - 0.5) * 0.70;
-        } else if (flawRoll < 0.55) {
+          flawOffset = (Math.random() - 0.5) * 0.45;
+        } else if (flawRoll < 0.40) {
           flawType = 'wrong_footed_gamble';
-          reactionDelay = 0.14 + Math.random() * 0.08;
-        } else if (flawRoll < 0.68) {
-          flawType = 'flat_footed_delay';
-          reactionDelay = 0.38 + Math.random() * 0.10;
-        } else if (flawRoll < 0.78) {
+          reactionDelay = 0.045 + Math.random() * 0.03;
+        } else if (flawRoll < 0.50) {
           flawType = 'fingertip_spill';
         } else {
           flawType = 'none';
@@ -3472,6 +3438,8 @@ export default function Stadium3DView({
     userInteractedWithReplayCamRef.current = false;
     isReplayPausedRef.current = false;
     setIsReplayPaused(false);
+    isCurrentReplaySavedRef.current = false;
+    setIsCurrentReplaySaved(false);
 
     // Goal Replay: Fixed 0.65x slow motion broadcast playback speed
     replaySpeedRef.current = 0.65;
@@ -3536,6 +3504,12 @@ export default function Stadium3DView({
 
   const stopReplayAndAdvance = () => {
     stopGoalCheerSound();
+    if (isSavedReplayModeRef.current || savedReplayClip) {
+      isReplayActiveRef.current = false;
+      setIsReplayActive(false);
+      onBack();
+      return;
+    }
     if (!isReplayActiveRef.current && shotPhaseRef.current !== 'finished') return;
     lastSceneSkipTimestampRef.current = Date.now();
     lockInputTemporarily(600);
@@ -3830,10 +3804,14 @@ export default function Stadium3DView({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (showResultsModal || showSurvivalGameOver || showExitModal) return;
 
-      // Skip replay on space / enter
+      // Replay controls on space / enter
       if (isReplayActiveRef.current) {
         if (e.key === ' ' || e.key === 'Enter' || e.code === 'Space' || e.code === 'Enter') {
           e.preventDefault();
+          if (isSavedReplayModeRef.current || savedReplayClip) {
+            toggleReplayPause();
+            return;
+          }
           lastSceneSkipTimestampRef.current = Date.now();
           lockInputTemporarily(600);
           stopReplayAndAdvance();
@@ -3914,6 +3892,13 @@ export default function Stadium3DView({
     }
 
     if (isReplayActiveRef.current) {
+      if (isSavedReplayModeRef.current || savedReplayClip) {
+        // Saved Replay Viewer mode (from replay page): do not skip on screen click/tap
+        e.stopPropagation();
+        return;
+      }
+
+      // Live Gameplay Match Replay: allow clicking anywhere to quickly skip replay and continue game
       e.stopPropagation();
       lastSceneSkipTimestampRef.current = Date.now();
       lockInputTemporarily(600);
@@ -3959,8 +3944,7 @@ export default function Stadium3DView({
     if (sceneLoading || isGameOver || showResultsModal) return;
 
     if (isReplayActiveRef.current) {
-      userInteractedWithReplayCamRef.current = true;
-      setReplayCamAngle('orbit');
+      // Replay is playing smooth broadcast camera tracking; ignore casual pointer moves
       return;
     }
 
@@ -6104,17 +6088,17 @@ export default function Stadium3DView({
             // 1. Walk across the goal line towards the ball's predicted X position
             const isAnyPenaltyMatch = isPenaltyTraining || isPenaltyShootoutRef.current || penaltyShootout.isActive || isPenaltyTrainingRef.current;
             const deltaX = gkPhys.targetX - gkPhys.pos.x;
-            const urgencySpeed = deltaX / Math.max(0.04, tCross);
-            const maxAgilitySpeed = isAnyPenaltyMatch ? 6.0 : 5.2; // Realistic walking pace along the goal line
+            const urgencySpeed = deltaX / Math.max(0.03, tCross);
+            const maxAgilitySpeed = isAnyPenaltyMatch ? 7.6 : 6.8; // Quick athletic agility along the goal line
             const desiredSpeed = THREE.MathUtils.clamp(urgencySpeed, -maxAgilitySpeed, maxAgilitySpeed);
-            gkPhys.walkSpeed = THREE.MathUtils.lerp(gkPhys.walkSpeed, desiredSpeed, Math.min(1.0, dt * (isAnyPenaltyMatch ? 20.0 : 16.0)));
+            gkPhys.walkSpeed = THREE.MathUtils.lerp(gkPhys.walkSpeed, desiredSpeed, Math.min(1.0, dt * (isAnyPenaltyMatch ? 26.0 : 22.0)));
             gkPhys.pos.x += gkPhys.walkSpeed * dt;
             gkPhys.pos.x = THREE.MathUtils.clamp(gkPhys.pos.x, -3.75, 3.75);
 
             // 2. Straight-line vertical jump: triggers ONLY if the ball is high and within goal frame
-            const isCloseToBallX = Math.abs(deltaX) < 1.25;
-            const isHighBall = gkPhys.targetY > 1.35 && gkPhys.targetY <= 2.46;
-            const isBallApproachingGoal = bPos.z < -35.5 || tCross < 0.38;
+            const isCloseToBallX = Math.abs(deltaX) < 1.45;
+            const isHighBall = gkPhys.targetY > 1.25 && gkPhys.targetY <= 2.48;
+            const isBallApproachingGoal = bPos.z < -34.5 || tCross < 0.45;
 
             if (
               !gkPhys.hasJumped &&
@@ -6126,7 +6110,7 @@ export default function Stadium3DView({
               gkPhys.actionType = 'jump';
               gkPhys.state = 'jumping';
               // Straight vertical jump with capped height so keeper never exceeds or flies over the crossbar (max jump lift ~0.45m)
-              const jumpLift = Math.min(0.45, Math.max(0.20, (gkPhys.targetY - 1.35) * 0.45));
+              const jumpLift = Math.min(0.45, Math.max(0.20, (gkPhys.targetY - 1.25) * 0.45));
               gkPhys.vel.y = Math.sqrt(2 * 18.0 * jumpLift);
             }
 
@@ -6474,15 +6458,17 @@ export default function Stadium3DView({
               _scratchV3_2.y = 0;
               _scratchV3_2.normalize();
 
-              const passSpeed = 26.0; // 26 m/s crisp, direct ground pass
+              const distToTeammate = ballPos.distanceTo(targetTeammate.position);
+              // Powerful, crisp direct ground pass that zips directly to the teammate with plenty of pace
+              const passSpeed = Math.max(34.0, Math.min(42.0, 28.0 + distToTeammate * 0.50));
               vHoriz = passSpeed;
-              vY = 0.05;
+              vY = 0.25;
               shotGravityRef.current = 9.81;
             } else if (currentPower <= 20) {
-              // Low power (0-20%): Flat driven ground pass/shot
+              // Low power (0-20%): Flat driven ground pass/shot with ample zip
               const pLower = Math.max(0.1, currentPower / 20.0);
-              vHoriz = (30.0 + pLower * 12.0) * 1.20;
-              vY = 0.2 + pLower * 1.0;
+              vHoriz = (34.0 + pLower * 12.0) * 1.15;
+              vY = 0.25 + pLower * 0.8;
               shotGravityRef.current = 9.81;
             } else {
               // Power shots (20-100%): Dynamic trajectory with sweet spot clearance and over-the-crossbar power misses
@@ -6677,16 +6663,17 @@ export default function Stadium3DView({
                 ballVelRef.current.y = 0;
               }
 
-              // Pitch grass rolling friction (smooth rolling friction so passes/low shots travel far)
+              // Pitch grass rolling friction (smooth rolling friction so passes/low shots travel far and maintain pace)
               const isHitPostOrFinished = shotPhaseRef.current === 'hit_post' || shotPhaseRef.current === 'finished';
-              const grassFriction = isHitPostOrFinished ? 6.5 : (hasBouncedRef.current ? 1.6 : 0.85);
+              const isPassing = aiPassedToTeammateRef.current || (currentPowerRef.current !== null && currentPowerRef.current <= 25);
+              const grassFriction = isHitPostOrFinished ? 6.5 : (isPassing ? 0.25 : (hasBouncedRef.current ? 1.4 : 0.75));
               ballVelRef.current.x *= Math.max(0, 1 - grassFriction * dt);
               ballVelRef.current.z *= Math.max(0, 1 - grassFriction * dt);
 
               // Linear rolling deceleration on turf to bring rolling balls to a clean, natural stop
               const speedH = Math.hypot(ballVelRef.current.x, ballVelRef.current.z);
               if (speedH > 0.001) {
-                const decel = (isHitPostOrFinished ? 9.5 : 2.5) * dt;
+                const decel = (isHitPostOrFinished ? 9.5 : (isPassing ? 0.45 : 2.2)) * dt;
                 const newSpeedH = Math.max(0, speedH - decel);
                 const scale = newSpeedH / speedH;
                 ballVelRef.current.x *= scale;
@@ -6737,10 +6724,10 @@ export default function Stadium3DView({
                 const dist2D = Math.sqrt(dx * dx + dz * dz);
                 const heightAtContact = prevBallPos.y + tSeg * (ballPosRef.current.y - prevBallPos.y);
 
-                // Responsive collision threshold: 1.15m for attacking teammate pass reception (making ground/low-power passes smooth and responsive), 0.65m for general collision
+                // Responsive collision threshold: 1.55m for targeted pass reception, 1.35m for general attacking teammate
                 const role = player.userData?.teamRole || 'defender';
                 const isAttackingTeammate = role === 'attacker';
-                const collisionThreshold = isTargetedPass ? 1.20 : (isAttackingTeammate ? 1.15 : 0.65);
+                const collisionThreshold = isTargetedPass ? 1.55 : (isAttackingTeammate ? 1.35 : 0.65);
 
                 if (dist2D <= collisionThreshold && heightAtContact >= 0.0 && heightAtContact <= 2.10) {
                   deflectionCooldownUntilRef.current = now + 500; // 500ms cooldown prevents duplicate collisions
@@ -6754,7 +6741,7 @@ export default function Stadium3DView({
                   playBallHitPlayerSound(0.92);
 
                   if (role === 'attacker') {
-                    // --- ATTACKING TEAMMATE: First-time strike with human finishing variance & flaws ---
+                    // --- ATTACKING TEAMMATE: First-time strike with high pace and finishing variety ---
                     ballPosRef.current.x = closeX;
                     ballPosRef.current.z = closeZ;
                     ballPosRef.current.y = Math.max(0.3015, heightAtContact);
@@ -6767,33 +6754,39 @@ export default function Stadium3DView({
 
                     const finishRoll = Math.random();
 
-                    if (finishRoll < 0.25) {
-                      // Flaw 1 (25%): Scuffed / weak mis-hit rolling tamely along the pitch towards the goal
+                    if (finishRoll < 0.16) {
+                      // Flaw 1 (16%): Scuffed / low mis-hit rolling along the pitch
                       goalTargetX = (Math.random() - 0.5) * 3.5;
                       goalTargetY = 0.20 + Math.random() * 0.35;
-                      strikeSpeed = 12.0 + Math.random() * 4.0;
-                    } else if (finishRoll < 0.45) {
-                      // Flaw 2 (20%): Blazed high over the crossbar into the crowd (2.75m-4.8m height)
+                      strikeSpeed = 16.0 + Math.random() * 4.0;
+                    } else if (finishRoll < 0.32) {
+                      // Flaw 2 (16%): Blazed over the crossbar (2.65m-3.8m height)
                       goalTargetX = (Math.random() - 0.5) * 4.5;
-                      goalTargetY = 2.75 + Math.random() * 2.0;
-                      strikeSpeed = 18.0 + Math.random() * 5.0;
-                    } else if (finishRoll < 0.62) {
-                      // Flaw 3 (17%): Sliced or dragged wide of the goalpost (|X| > 3.85m)
+                      goalTargetY = 2.65 + Math.random() * 1.5;
+                      strikeSpeed = 24.0 + Math.random() * 5.0;
+                    } else if (finishRoll < 0.46) {
+                      // Flaw 3 (14%): Sliced wide of the post
                       const missSide = Math.random() > 0.5 ? 1 : -1;
-                      goalTargetX = missSide * (3.85 + Math.random() * 1.5);
-                      goalTargetY = 0.35 + Math.random() * 1.6;
-                      strikeSpeed = 16.0 + Math.random() * 5.0;
-                    } else if (finishRoll < 0.78) {
-                      // Flaw 4 (16%): Rushed shot hit directly at the goalkeeper's body
-                      goalTargetX = currentGkX + (Math.random() - 0.5) * 1.1;
-                      goalTargetY = 0.50 + Math.random() * 1.2;
-                      strikeSpeed = 15.0 + Math.random() * 5.0;
-                    } else {
-                      // Clean attempt (22%): Corner effort with human margin and fair flight speed (17-21 m/s)
+                      goalTargetX = missSide * (3.85 + Math.random() * 1.2);
+                      goalTargetY = 0.40 + Math.random() * 1.6;
+                      strikeSpeed = 22.0 + Math.random() * 5.0;
+                    } else if (finishRoll < 0.62) {
+                      // Style 1 (16%): Rushed low driven test at the keeper
+                      goalTargetX = currentGkX + (Math.random() - 0.5) * 1.2;
+                      goalTargetY = 0.35 + Math.random() * 0.9;
+                      strikeSpeed = 24.0 + Math.random() * 4.0;
+                    } else if (finishRoll < 0.82) {
+                      // Style 2 (20%): Low driven blast into bottom corner / side-netting
                       const cornerSide = Math.random() > 0.5 ? 1 : -1;
-                      goalTargetX = cornerSide * (1.8 + Math.random() * 1.4);
-                      goalTargetY = 0.45 + Math.random() * 1.5;
-                      strikeSpeed = 17.0 + Math.random() * 4.0;
+                      goalTargetX = cornerSide * (2.4 + Math.random() * 1.0);
+                      goalTargetY = 0.30 + Math.random() * 0.8;
+                      strikeSpeed = 26.0 + Math.random() * 5.0;
+                    } else {
+                      // Style 3 (18%): Upper corner strike
+                      const cornerSide = Math.random() > 0.5 ? 1 : -1;
+                      goalTargetX = cornerSide * (2.2 + Math.random() * 1.1);
+                      goalTargetY = 1.40 + Math.random() * 0.9;
+                      strikeSpeed = 26.0 + Math.random() * 6.0;
                     }
 
                     const goalLineZ = -42.0;
@@ -6883,7 +6876,6 @@ export default function Stadium3DView({
 
               const isGroundedFromEarlyJump = gkPhys.jumpCompleted && gkPhys.pos.y === 0;
               const isAiShooter = currentTurnRef.current === 'ai';
-              const isAiOnConsecutive = isAiShooter && aiConsecutiveGoalsRef.current >= 1;
               const isAiAtStageCap = isAiShooter && !isOnlineMatch && !isPracticeMode && awayScoreRef.current >= getAiMaxGoalCap();
 
               // Physical reach envelope based on dynamic action type (ground reach vs jumping dive catch)
@@ -6893,9 +6885,7 @@ export default function Stadium3DView({
                 ? 2.35
                 : isAiShooter
                 ? 1.70
-                : isAiOnConsecutive
-                ? 1.45
-                : 1.20;
+                : 1.45;
               let minReachY = 0.0;
               let maxReachY = isGroundedFromEarlyJump
                 ? 1.65
@@ -6903,14 +6893,12 @@ export default function Stadium3DView({
                 ? 2.78
                 : isAiShooter
                 ? 2.65
-                : isAiOnConsecutive
-                ? 2.65
-                : 2.35;
+                : 2.55;
 
-              if (gkPhys.hasJumped || gkPhys.actionType === 'jump' || isAiOnConsecutive || isAiAtStageCap || isAiShooter) {
-                reachRadiusX = isAiAtStageCap ? 2.50 : isAiShooter ? 2.15 : isAiOnConsecutive ? 1.85 : 1.65; // Extended mid-air diving wingspan
+              if (gkPhys.hasJumped || gkPhys.actionType === 'jump' || isAiAtStageCap || isAiShooter) {
+                reachRadiusX = isAiAtStageCap ? 2.50 : isAiShooter ? 2.15 : 1.85; // Extended mid-air diving wingspan
                 minReachY = Math.max(0, gkY - 0.15);
-                maxReachY = Math.min(2.78, (isAiAtStageCap ? 2.78 : isAiShooter ? 2.72 : isAiOnConsecutive ? 2.68 : (gkY + 2.25)));
+                maxReachY = Math.min(2.78, (isAiAtStageCap ? 2.78 : isAiShooter ? 2.72 : (gkY + 2.25)));
               }
 
               // Ball is within keeper's physical reach
@@ -6927,7 +6915,7 @@ export default function Stadium3DView({
 
                 // On high curve / bend or high speed shots, the ball is harder to hold
                 const isFingertipEdge = Math.abs(dx) > reachRadiusX * 0.70 || ballY > maxReachY - 0.22 || (hasSignificantCurve && Math.abs(dx) > reachRadiusX * 0.45);
-                const isSpill = !isAiShooter && !isAiOnConsecutive && !isAiAtStageCap && (
+                const isSpill = !isAiShooter && !isAiAtStageCap && (
                   (gkPhys.flawType === 'fingertip_spill' && Math.random() < 0.75) ||
                   (hasSignificantCurve && isFingertipEdge && Math.random() < 0.50) ||
                   (impactSpeed > 22.0 && isFingertipEdge && Math.random() < 0.40)
@@ -8627,15 +8615,22 @@ export default function Stadium3DView({
               ) : (
                 <>
                   <button
+                    disabled={isCurrentReplaySaved}
                     onPointerDown={(e) => e.stopPropagation()}
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleSaveReplay();
+                      if (!isCurrentReplaySaved) {
+                        handleSaveReplay();
+                      }
                     }}
-                    className="flex items-center gap-1 bg-amber-400 hover:bg-amber-300 active:scale-95 text-black font-black text-[10px] sm:text-xs md:text-xs uppercase tracking-wider px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-[12px] md:rounded-[14px] border-[2.5px] md:border-[3px] border-black shadow-[0_3px_0_0_#000] cursor-pointer transition-all"
-                    title="Save Replay Moment"
+                    className={`flex items-center gap-1 font-black text-[10px] sm:text-xs md:text-xs uppercase tracking-wider px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-[12px] md:rounded-[14px] border-[2.5px] md:border-[3px] border-black shadow-[0_3px_0_0_#000] transition-all ${
+                      isCurrentReplaySaved
+                        ? 'bg-emerald-400 text-black cursor-default opacity-95'
+                        : 'bg-amber-400 hover:bg-amber-300 active:scale-95 text-black cursor-pointer'
+                    }`}
+                    title={isCurrentReplaySaved ? 'Replay Saved' : 'Save Replay Moment'}
                   >
-                    {isSavedToast ? (
+                    {isCurrentReplaySaved ? (
                       <>
                         <Check className="w-3.5 h-3.5 stroke-[3]" />
                         <span>SAVED</span>
