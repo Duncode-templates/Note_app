@@ -41,25 +41,26 @@ export interface LanguageInfo {
   name: string;
   nativeName: string;
   flag: string;
+  countryCode: string;
 }
 
 export const SUPPORTED_LANGUAGES: LanguageInfo[] = [
-  { code: 'en', name: 'English', nativeName: 'English', flag: '🇬🇧' },
-  { code: 'es', name: 'Spanish', nativeName: 'Español', flag: '🇪🇸' },
-  { code: 'pt', name: 'Portuguese', nativeName: 'Português', flag: '🇧🇷' },
-  { code: 'fr', name: 'French', nativeName: 'Français', flag: '🇫🇷' },
-  { code: 'de', name: 'German', nativeName: 'Deutsch', flag: '🇩🇪' },
-  { code: 'it', name: 'Italian', nativeName: 'Italiano', flag: '🇮🇹' },
-  { code: 'ru', name: 'Russian', nativeName: 'Русский', flag: '🇷🇺' },
-  { code: 'tr', name: 'Turkish', nativeName: 'Türkçe', flag: '🇹🇷' },
-  { code: 'pl', name: 'Polish', nativeName: 'Polski', flag: '🇵🇱' },
-  { code: 'nl', name: 'Dutch', nativeName: 'Nederlands', flag: '🇳🇱' },
-  { code: 'id', name: 'Indonesian', nativeName: 'Bahasa Indonesia', flag: '🇮🇩' },
-  { code: 'ja', name: 'Japanese', nativeName: '日本語', flag: '🇯🇵' },
-  { code: 'ko', name: 'Korean', nativeName: '한국어', flag: '🇰🇷' },
-  { code: 'vi', name: 'Vietnamese', nativeName: 'Tiếng Việt', flag: '🇻🇳' },
-  { code: 'ar', name: 'Arabic', nativeName: 'العربية', flag: '🇸🇦' },
-  { code: 'zh', name: 'Chinese', nativeName: '简体中文', flag: '🇨🇳' },
+  { code: 'en', name: 'English', nativeName: 'English', flag: '🇬🇧', countryCode: 'gb' },
+  { code: 'es', name: 'Spanish', nativeName: 'Español', flag: '🇪🇸', countryCode: 'es' },
+  { code: 'pt', name: 'Portuguese', nativeName: 'Português', flag: '🇧🇷', countryCode: 'br' },
+  { code: 'fr', name: 'French', nativeName: 'Français', flag: '🇫🇷', countryCode: 'fr' },
+  { code: 'de', name: 'German', nativeName: 'Deutsch', flag: '🇩🇪', countryCode: 'de' },
+  { code: 'it', name: 'Italian', nativeName: 'Italiano', flag: '🇮🇹', countryCode: 'it' },
+  { code: 'ru', name: 'Russian', nativeName: 'Русский', flag: '🇷🇺', countryCode: 'ru' },
+  { code: 'tr', name: 'Turkish', nativeName: 'Türkçe', flag: '🇹🇷', countryCode: 'tr' },
+  { code: 'pl', name: 'Polish', nativeName: 'Polski', flag: '🇵🇱', countryCode: 'pl' },
+  { code: 'nl', name: 'Dutch', nativeName: 'Nederlands', flag: '🇳🇱', countryCode: 'nl' },
+  { code: 'id', name: 'Indonesian', nativeName: 'Bahasa Indonesia', flag: '🇮🇩', countryCode: 'id' },
+  { code: 'ja', name: 'Japanese', nativeName: '日本語', flag: '🇯🇵', countryCode: 'jp' },
+  { code: 'ko', name: 'Korean', nativeName: '한국어', flag: '🇰🇷', countryCode: 'kr' },
+  { code: 'vi', name: 'Vietnamese', nativeName: 'Tiếng Việt', flag: '🇻🇳', countryCode: 'vn' },
+  { code: 'ar', name: 'Arabic', nativeName: 'العربية', flag: '🇸🇦', countryCode: 'sa' },
+  { code: 'zh', name: 'Chinese', nativeName: '简体中文', flag: '🇨🇳', countryCode: 'cn' },
 ];
 
 const LANGUAGE_STORAGE_KEY = 'fkl_user_language_v1';

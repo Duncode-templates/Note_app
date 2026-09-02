@@ -726,9 +726,13 @@ export default function App() {
           className="bg-white/95 hover:bg-white backdrop-blur-md border-[3px] md:border-[3.5px] border-black shadow-[0_5px_0_0_#000] md:shadow-[0_7px_0_0_#000] rounded-full px-3 sm:px-4 py-1.5 sm:py-2 flex items-center gap-2 cursor-pointer select-none outline-none transition-colors"
           title={t('nav.language', 'Language')}
         >
-          <span className="text-lg leading-none">
-            {SUPPORTED_LANGUAGES.find((l) => l.code === language)?.flag || '🌐'}
-          </span>
+          <div className="w-5 h-3.5 sm:w-6 sm:h-4 rounded-[4px] border border-black overflow-hidden bg-slate-200 shrink-0">
+            <LazyFlagImage
+              countryCode={SUPPORTED_LANGUAGES.find((l) => l.code === language)?.countryCode || 'gb'}
+              alt="Language Flag"
+              className="w-full h-full object-cover"
+            />
+          </div>
           <span className="text-xs sm:text-sm font-black text-black uppercase tracking-wider">
             {SUPPORTED_LANGUAGES.find((l) => l.code === language)?.code.toUpperCase() || 'EN'}
           </span>
