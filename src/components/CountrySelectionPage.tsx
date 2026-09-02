@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ArrowLeft, Check, Shield, Crosshair, ArrowRight, X } from 'lucide-react';
 import { COUNTRIES_DATA, Country, getFlagUrl } from '../data/countries';
 import LazyFlagImage from './LazyFlagImage';
+import { useTranslation } from '../utils/i18n';
 
 interface CountrySelectionPageProps {
   onBack: () => void;
@@ -15,6 +16,7 @@ export default function CountrySelectionPage({
   onSelectCountry,
   titleMode = 'Quick Play - Offline',
 }: CountrySelectionPageProps) {
+  const { t } = useTranslation();
   const [myTeam, setMyTeam] = useState<Country | null>(null);
   const [opponentTeam, setOpponentTeam] = useState<Country | null>(null);
 
@@ -88,15 +90,15 @@ export default function CountrySelectionPage({
           className="px-4 py-2.5 rounded-[18px] font-black uppercase tracking-wider bg-white text-black border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer flex items-center gap-2 text-xs sm:text-sm outline-none focus:outline-none"
         >
           <ArrowLeft className="w-5 h-5 text-black" />
-          <span>Back to Menu</span>
+          <span>{t('common.back', 'Back')}</span>
         </motion.button>
 
         <div className="bg-white border-[3.5px] border-black shadow-[0_6px_0_0_#000] rounded-[22px] px-5 py-3 text-left sm:text-right">
           <h1 className="text-xl sm:text-2xl md:text-3xl font-black uppercase tracking-wider text-black">
-            SELECT MATCH TEAMS
+            {t('country.selectTeams', 'SELECT MATCH TEAMS')}
           </h1>
           <p className="text-[11px] sm:text-xs text-slate-700 font-bold uppercase tracking-widest mt-0.5">
-            {titleMode} • 120 National Teams
+            {titleMode} • 120 {t('country.nationalTeams', 'National Teams')}
           </p>
         </div>
       </motion.div>
@@ -110,8 +112,8 @@ export default function CountrySelectionPage({
         transition={{ duration: 0.4, delay: 0.12 }}
         className="flex items-center justify-between text-xs text-black font-black uppercase mb-4 px-2 tracking-wider bg-amber-400/90 border-2 border-black rounded-full py-1.5 px-4 shadow-[0_3px_0_0_#000]"
       >
-        <span>120 Teams Available</span>
-        <span>Tap Card to Select / Unselect</span>
+        <span>120 {t('country.teamsAvailable', 'Teams Available')}</span>
+        <span>{t('country.tapToSelect', 'Tap Card to Select / Unselect')}</span>
       </motion.div>
 
       {/* 3D Staggered Grid of 120 Countries */}
@@ -144,12 +146,12 @@ export default function CountrySelectionPage({
               {/* Selected Badge Overlay */}
               {isMyTeam && (
                 <div className="absolute top-0 right-0 bg-emerald-500 text-white font-black text-[9px] uppercase px-2.5 py-1 rounded-bl-[12px] border-b-2 border-l-2 border-black flex items-center gap-1 shadow-xs z-10">
-                  <Check className="w-3 h-3 stroke-[3]" /> MY TEAM
+                  <Check className="w-3 h-3 stroke-[3]" /> {t('country.myTeam', 'MY TEAM')}
                 </div>
               )}
               {isOpponent && (
                 <div className="absolute top-0 right-0 bg-rose-500 text-white font-black text-[9px] uppercase px-2.5 py-1 rounded-bl-[12px] border-b-2 border-l-2 border-black flex items-center gap-1 shadow-xs z-10">
-                  <Crosshair className="w-3 h-3 stroke-[3]" /> OPPONENT
+                  <Crosshair className="w-3 h-3 stroke-[3]" /> {t('country.opponent', 'OPPONENT')}
                 </div>
               )}
 
@@ -191,7 +193,7 @@ export default function CountrySelectionPage({
             <div className="flex items-center gap-2">
               {myTeam ? (
                 <div className="flex items-center gap-2 bg-emerald-100 border-2 border-black rounded-xl px-3 py-1.5 shadow-[0_2px_0_0_#000]">
-                  <span className="text-[10px] font-black uppercase text-emerald-800 tracking-wider">MY TEAM</span>
+                  <span className="text-[10px] font-black uppercase text-emerald-800 tracking-wider">{t('country.myTeam', 'MY TEAM')}</span>
                   <div className="w-5 h-3.5 rounded border border-black overflow-hidden bg-slate-200">
                     <LazyFlagImage src={getFlagUrl(myTeam.code)} alt={myTeam.name} className="w-full h-full object-cover" />
                   </div>
@@ -199,7 +201,7 @@ export default function CountrySelectionPage({
                 </div>
               ) : (
                 <div className="bg-slate-100 border-2 border-dashed border-slate-400 rounded-xl px-3 py-1.5 text-[11px] font-black uppercase text-slate-400">
-                  MY TEAM
+                  {t('country.myTeam', 'MY TEAM')}
                 </div>
               )}
 
@@ -207,7 +209,7 @@ export default function CountrySelectionPage({
 
               {opponentTeam ? (
                 <div className="flex items-center gap-2 bg-rose-100 border-2 border-black rounded-xl px-3 py-1.5 shadow-[0_2px_0_0_#000]">
-                  <span className="text-[10px] font-black uppercase text-rose-800 tracking-wider">OPPONENT</span>
+                  <span className="text-[10px] font-black uppercase text-rose-800 tracking-wider">{t('country.opponent', 'OPPONENT')}</span>
                   <div className="w-5 h-3.5 rounded border border-black overflow-hidden bg-slate-200">
                     <LazyFlagImage src={getFlagUrl(opponentTeam.code)} alt={opponentTeam.name} className="w-full h-full object-cover" />
                   </div>
@@ -215,7 +217,7 @@ export default function CountrySelectionPage({
                 </div>
               ) : (
                 <div className="bg-slate-100 border-2 border-dashed border-slate-400 rounded-xl px-3 py-1.5 text-[11px] font-black uppercase text-slate-400">
-                  OPPONENT
+                  {t('country.opponent', 'OPPONENT')}
                 </div>
               )}
             </div>
@@ -235,7 +237,7 @@ export default function CountrySelectionPage({
                 : 'bg-slate-200 text-slate-400 border-[2.5px] border-slate-300 cursor-not-allowed opacity-60'
             }`}
           >
-            <span>CONTINUE TO MATCH</span>
+            <span>{t('country.continueToMatch', 'CONTINUE TO MATCH')}</span>
             <ArrowRight className="w-5 h-5 stroke-[3]" />
           </button>
         </div>

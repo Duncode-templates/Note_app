@@ -4,6 +4,7 @@ import { X, Play, Trash2, Bookmark, Flame, User, Check, Video, AlertCircle } fro
 import { SavedReplay } from '../types';
 import { savedReplayManager } from '../utils/savedReplayManager';
 import { getFlagUrl } from '../data/countries';
+import { useTranslation } from '../utils/i18n';
 import LazyFlagImage from './LazyFlagImage';
 import CoinIcon from './CoinIcon';
 
@@ -26,6 +27,7 @@ export default function UserProfileModal({
   bestSurvivalStreak,
   onPlayReplay,
 }: UserProfileModalProps) {
+  const { t } = useTranslation();
   const [replays, setReplays] = useState<SavedReplay[]>(() => savedReplayManager.getReplays());
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -86,7 +88,7 @@ export default function UserProfileModal({
 
               <div className="flex flex-col">
                 <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-900/80">
-                  PLAYER PROFILE
+                  {t('profile.title', 'PLAYER PROFILE')}
                 </span>
                 <span className="text-base sm:text-lg md:text-xl font-black uppercase tracking-wider text-black">
                   {playerName}
@@ -98,7 +100,7 @@ export default function UserProfileModal({
             <button
               onClick={onClose}
               className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white hover:bg-slate-100 active:scale-95 text-black border-[2.5px] border-black shadow-[0_3px_0_0_#000] flex items-center justify-center cursor-pointer transition-all shrink-0"
-              title="Close"
+              title={t('common.close', 'Close')}
             >
               <X className="w-5 h-5 stroke-[2.5]" />
             </button>
@@ -110,7 +112,7 @@ export default function UserProfileModal({
             <div className="bg-slate-800/90 border-[2px] border-black rounded-[14px] p-2 sm:p-2.5 flex flex-col items-center justify-center shadow-xs">
               <span className="text-[9px] sm:text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1">
                 <CoinIcon size="w-3.5 h-3.5" />
-                <span>COINS</span>
+                <span>{t('common.coins', 'COINS')}</span>
               </span>
               <span className="text-sm sm:text-base font-black text-amber-400 font-mono mt-0.5">
                 {coins.toLocaleString()}
@@ -121,10 +123,10 @@ export default function UserProfileModal({
             <div className="bg-slate-800/90 border-[2px] border-black rounded-[14px] p-2 sm:p-2.5 flex flex-col items-center justify-center shadow-xs">
               <span className="text-[9px] sm:text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1">
                 <Flame className="w-3.5 h-3.5 text-rose-500 fill-rose-500" />
-                <span>BEST STREAK</span>
+                <span>{t('survival.bestStreak', 'BEST STREAK')}</span>
               </span>
               <span className="text-sm sm:text-base font-black text-rose-400 font-mono mt-0.5">
-                {bestSurvivalStreak} Kicks
+                {bestSurvivalStreak} {t('survival.kicks', 'Kicks')}
               </span>
             </div>
 
@@ -132,7 +134,7 @@ export default function UserProfileModal({
             <div className="bg-slate-800/90 border-[2px] border-black rounded-[14px] p-2 sm:p-2.5 flex flex-col items-center justify-center shadow-xs">
               <span className="text-[9px] sm:text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1">
                 <Bookmark className="w-3.5 h-3.5 text-emerald-400" />
-                <span>SAVED REPLAYS</span>
+                <span>{t('replays.savedReplays', 'SAVED REPLAYS')}</span>
               </span>
               <span className="text-sm sm:text-base font-black text-emerald-400 font-mono mt-0.5">
                 {replays.length}
@@ -146,11 +148,11 @@ export default function UserProfileModal({
               <div className="flex items-center gap-1.5">
                 <Video className="w-4 h-4 text-amber-400" />
                 <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-white">
-                  SAVED MATCH HIGHLIGHTS
+                  {t('replays.savedHighlights', 'SAVED MATCH HIGHLIGHTS')}
                 </span>
               </div>
               <span className="text-[10px] sm:text-xs font-bold text-slate-400">
-                {replays.length} / 25 Clips
+                {replays.length} / 25 {t('replays.clips', 'Clips')}
               </span>
             </div>
 
@@ -161,10 +163,10 @@ export default function UserProfileModal({
                   <Bookmark className="w-6 h-6 stroke-[2]" />
                 </div>
                 <h4 className="text-sm sm:text-base font-black uppercase text-white tracking-wider mb-1">
-                  NO SAVED REPLAYS YET
+                  {t('replays.noSavedReplays', 'NO SAVED REPLAYS YET')}
                 </h4>
                 <p className="text-xs sm:text-sm text-slate-400 max-w-xs leading-relaxed">
-                  Score a goal and tap <span className="font-bold text-amber-400">SAVE</span> in the top right during replay mode to save your best strikes here!
+                  {t('replays.emptyInstructions', 'Score a goal and tap SAVE in the top right during replay mode to save your best strikes here!')}
                 </p>
               </div>
             ) : (
@@ -208,7 +210,7 @@ export default function UserProfileModal({
                                 : 'bg-rose-500/20 text-rose-300 border-rose-500/50'
                             }`}
                           >
-                            {replay.outcomeText || (replay.isGoal ? 'GOAL' : 'SAVED')}
+                            {replay.outcomeText || (replay.isGoal ? t('common.goal', 'GOAL') : t('common.saved', 'SAVED'))}
                           </span>
                         </div>
 
@@ -232,17 +234,17 @@ export default function UserProfileModal({
                           onClose();
                         }}
                         className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-gradient-to-r from-emerald-400 to-teal-400 hover:from-emerald-300 hover:to-teal-300 active:scale-95 text-black font-black text-xs uppercase tracking-wider px-3.5 py-2 rounded-[12px] border-[2px] border-black shadow-[0_2.5px_0_0_#000] cursor-pointer transition-all"
-                        title="Watch Replay"
+                        title={t('replays.watchReplay', 'Watch Replay')}
                       >
                         <Play className="w-3.5 h-3.5 fill-black" />
-                        <span>WATCH REPLAY</span>
+                        <span>{t('replays.watchReplay', 'WATCH REPLAY')}</span>
                       </button>
 
                       <button
                         onClick={(e) => handleDelete(replay.id, e)}
                         disabled={deletingId === replay.id}
                         className="w-8 h-8 rounded-[12px] bg-rose-500/20 hover:bg-rose-500/40 active:scale-95 text-rose-400 hover:text-rose-200 border-[2px] border-rose-500/40 flex items-center justify-center cursor-pointer transition-all shrink-0"
-                        title="Delete Replay"
+                        title={t('replays.deleteReplay', 'Delete Replay')}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -257,13 +259,13 @@ export default function UserProfileModal({
           <div className="p-3 sm:p-3.5 bg-slate-950 border-t-[2.5px] border-black/80 flex items-center justify-between text-slate-400 text-[10px] sm:text-xs font-bold">
             <span className="flex items-center gap-1.5">
               <Check className="w-3.5 h-3.5 text-emerald-400" />
-              <span>SAVED VIA CRAZYGAMES CLOUD & LOCAL STORAGE</span>
+              <span>{t('profile.cloudStorageNotice', 'SAVED VIA CRAZYGAMES CLOUD & LOCAL STORAGE')}</span>
             </span>
             <button
               onClick={onClose}
               className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded-lg border border-black font-black uppercase tracking-wider cursor-pointer"
             >
-              CLOSE
+              {t('common.close', 'CLOSE')}
             </button>
           </div>
         </motion.div>

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronDown, Check, CircleDot, Layers } from 'lucide-react';
+import { useTranslation } from '../utils/i18n';
 
 export type StoreTab = 'balls' | 'pitches';
 
@@ -17,6 +18,7 @@ export default function StoreDropdown({
   ballsCount = 50,
   pitchesCount = 50,
 }: StoreDropdownProps) {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -50,17 +52,17 @@ export default function StoreDropdown({
   const options: { id: StoreTab; label: string; iconType: 'ball' | 'pitch'; count: number; desc: string }[] = [
     {
       id: 'balls',
-      label: 'BALL STORE',
+      label: t('store.ballStore', 'BALL STORE'),
       iconType: 'ball',
       count: ballsCount,
-      desc: '3D Textures & Pro Models',
+      desc: t('store.ballStoreDesc', '3D Textures & Pro Models'),
     },
     {
       id: 'pitches',
-      label: 'PITCH STORE',
+      label: t('store.pitchStore', 'PITCH STORE'),
       iconType: 'pitch',
       count: pitchesCount,
-      desc: 'Stadium Grass & Turf Cuts',
+      desc: t('store.pitchStoreDesc', 'Stadium Grass & Turf Cuts'),
     },
   ];
 
@@ -117,8 +119,8 @@ export default function StoreDropdown({
             role="listbox"
           >
             <div className="px-3 py-1 text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-200 mb-1 flex items-center justify-between">
-              <span>SELECT CATEGORY</span>
-              <span className="text-amber-500 font-black">STORE</span>
+              <span>{t('store.selectCategory', 'SELECT CATEGORY')}</span>
+              <span className="text-amber-500 font-black">{t('menu.shop', 'STORE')}</span>
             </div>
 
             {options.map((opt) => {

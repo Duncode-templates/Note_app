@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { WAGER_TIERS, WagerTier } from '../data/wagerArenas';
 import CoinIcon from './CoinIcon';
+import { useTranslation } from '../utils/i18n';
 
 interface WagerArenaSelectModalProps {
   isOpen: boolean;
@@ -28,6 +29,7 @@ export default function WagerArenaSelectModal({
   onClose,
   onSelectTier,
 }: WagerArenaSelectModalProps) {
+  const { t } = useTranslation();
   const [activeIndex, setActiveIndex] = useState<number>(0);
   const touchStartXRef = useRef<number | null>(null);
 
@@ -137,15 +139,15 @@ export default function WagerArenaSelectModal({
             className="px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-[18px] font-black uppercase tracking-wider bg-white text-black border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer flex items-center gap-2 text-xs sm:text-sm outline-none focus:outline-none"
           >
             <ArrowLeft className="w-5 h-5 text-black" />
-            <span className="hidden xs:inline">Back to Menu</span>
-            <span className="xs:hidden">Back</span>
+            <span className="hidden xs:inline">{t('common.backToMenu', 'Back to Menu')}</span>
+            <span className="xs:hidden">{t('common.back', 'Back')}</span>
           </motion.button>
 
           {/* User Coin Balance */}
           <div className="bg-white/95 backdrop-blur-md border-[3px] border-black shadow-[0_5px_0_0_#000] rounded-full px-3.5 sm:px-5 py-1.5 sm:py-2 flex items-center gap-2 sm:gap-2.5">
             <CoinIcon className="w-6 h-6 sm:w-7 sm:h-7" />
             <span className="text-sm sm:text-base md:text-xl font-black text-black tracking-wider">
-              {userCoins.toLocaleString()} <span className="text-[10px] sm:text-xs text-slate-600">COINS</span>
+              {userCoins.toLocaleString()} <span className="text-[10px] sm:text-xs text-slate-600">{t('common.coins', 'COINS')}</span>
             </span>
           </div>
         </div>
@@ -157,10 +159,10 @@ export default function WagerArenaSelectModal({
             animate={{ opacity: 1, y: 0 }}
             className="text-2xl sm:text-4xl md:text-5xl font-black uppercase tracking-wider text-transparent bg-clip-text bg-gradient-to-b from-yellow-200 via-amber-300 to-amber-500 drop-shadow-[0_3px_0_#78350f] sm:drop-shadow-[0_5px_0_#78350f] [text-shadow:0_1px_0_#fef08a,0_2px_0_#f59e0b,0_3px_0_#d97706,0_4px_0_#b45309,0_5px_0_#78350f,0_6px_12px_rgba(0,0,0,0.6)]"
           >
-            COIN WAGER ARENA
+            {t('wager.title', 'COIN WAGER ARENA')}
           </motion.h1>
           <p className="text-white text-xs sm:text-sm font-bold uppercase tracking-widest drop-shadow-md mt-0.5">
-            Pick your stakes • Winner takes all coins!
+            {t('wager.subtitle', 'Pick your stakes • Winner takes all coins!')}
           </p>
         </div>
 
@@ -291,7 +293,7 @@ export default function WagerArenaSelectModal({
                     {/* Entry Stake */}
                     <div className="bg-slate-100 border-[2px] border-black rounded-[16px] p-2 sm:p-2.5 flex flex-col items-center">
                       <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">
-                        ENTRY
+                        {t('wager.entry', 'ENTRY')}
                       </span>
                       <div className="flex items-center gap-1 font-black text-sm sm:text-base text-black mt-0.5">
                         <CoinIcon size={16} />
@@ -302,7 +304,7 @@ export default function WagerArenaSelectModal({
                     {/* Prize Pot */}
                     <div className="bg-amber-300 border-[2px] border-black rounded-[16px] p-2 sm:p-2.5 flex flex-col items-center shadow-xs">
                       <span className="text-[10px] font-black text-amber-900 uppercase tracking-wider">
-                        WIN POT
+                        {t('wager.winPot', 'WIN POT')}
                       </span>
                       <div className="flex items-center gap-1 font-black text-sm sm:text-base text-black mt-0.5">
                         <Trophy className="w-4 h-4 text-black" />
@@ -324,17 +326,17 @@ export default function WagerArenaSelectModal({
                         className="w-full py-3 sm:py-3.5 px-4 rounded-[18px] font-black text-sm sm:text-base uppercase tracking-wider bg-gradient-to-r from-amber-400 to-yellow-400 text-black border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer flex items-center justify-center gap-2 outline-none"
                       >
                         <Swords className="w-5 h-5 text-black" />
-                        <span>PLAY ({tier.entryFee} COINS)</span>
+                        <span>{t('wager.playWithCoins', `PLAY (${tier.entryFee} COINS)`)}</span>
                       </motion.button>
                     ) : (
                       <div className="w-full py-3 sm:py-3.5 px-3 rounded-[18px] font-black text-xs sm:text-sm uppercase tracking-wider bg-rose-100 text-rose-700 border-[2.5px] border-rose-400 flex items-center justify-center gap-1.5">
                         <Lock className="w-4 h-4 text-rose-600" />
-                        <span>NEED +{diffCoins} MORE COINS</span>
+                        <span>{t('wager.needMoreCoins', `NEED +${diffCoins} MORE COINS`)}</span>
                       </div>
                     )
                   ) : (
                     <div className="text-[11px] font-black text-slate-400 uppercase tracking-wider py-2">
-                      Tap to select
+                      {t('wager.tapToSelect', 'Tap to select')}
                     </div>
                   )}
                 </motion.div>
@@ -351,7 +353,7 @@ export default function WagerArenaSelectModal({
             className="bg-black/80 backdrop-blur-md border-[2.5px] border-black text-amber-300 px-4 sm:px-6 py-2 rounded-full shadow-[0_4px_0_0_#000] flex items-center gap-2 sm:gap-2.5 text-center text-xs sm:text-sm font-black uppercase tracking-wider"
           >
             <Flame className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400 shrink-0 animate-pulse" />
-            <span>Swipe or click arrows to explore arenas • High stakes, double coin rewards!</span>
+            <span>{t('wager.bottomBanner', 'Swipe or click arrows to explore arenas • High stakes, double coin rewards!')}</span>
             <Trophy className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-400 shrink-0 hidden sm:inline-block animate-bounce" />
           </motion.div>
         </div>

@@ -4,6 +4,7 @@ import { Heart, RotateCcw, Home, Flame, Trophy, Shield, Check, X, Wifi, WifiOff,
 import { Country, getFlagUrl, getCountryAbbr } from '../data/countries';
 import { OnlineMatchRoom } from '../types';
 import { onlineMatchManager } from '../utils/onlineMatchManager';
+import { useTranslation } from '../utils/i18n';
 
 interface SurvivalOnlineResultsPageProps {
   country: Country;
@@ -37,6 +38,7 @@ export const SurvivalOnlineResultsPage: React.FC<SurvivalOnlineResultsPageProps>
   onPlayAgain,
   onReturnToMenu,
 }) => {
+  const { t } = useTranslation();
   const [rematchStatus, setRematchStatus] = useState<'idle' | 'requesting' | 'received_invitation' | 'accepted' | 'declined'>('idle');
   const [rematchNotice, setRematchNotice] = useState<string | null>(null);
   const isBotOpponent = onlineMatchManager.isCurrentRoomBotMatch() || Boolean(
@@ -186,13 +188,13 @@ export const SurvivalOnlineResultsPage: React.FC<SurvivalOnlineResultsPageProps>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-base sm:text-xl md:text-2xl font-black uppercase tracking-wider text-black drop-shadow-xs">
-                {onlineMatchRoom ? 'ONLINE SURVIVAL 1v1 DUEL' : 'SURVIVAL 1v1 DUEL'}
+                {onlineMatchRoom ? t('survival.onlineDuel', 'ONLINE SURVIVAL 1v1 DUEL') : t('survival.duel', 'SURVIVAL 1v1 DUEL')}
               </h1>
             </div>
             <p className="text-[10px] sm:text-xs text-slate-900 font-black uppercase tracking-wider">
               {onlineMatchRoom
-                ? `100s Time Expired • Lives Survival Results • Room #${onlineMatchRoom?.roomId || onlineMatchManager.currentRoom?.roomId || 'ONLINE'}`
-                : '100s Time Expired • Lives Survival Results • Player vs AI'}
+                ? `100s • ${t('survival.livesRemaining', 'Lives Survival Results')} • ROOM #${onlineMatchRoom?.roomId || onlineMatchManager.currentRoom?.roomId || 'ONLINE'}`
+                : `100s • ${t('survival.livesRemaining', 'Lives Survival Results')} • Player vs AI`}
             </p>
           </div>
         </div>
@@ -211,10 +213,10 @@ export const SurvivalOnlineResultsPage: React.FC<SurvivalOnlineResultsPageProps>
             <WifiOff className="w-5 h-5 sm:w-6 sm:h-6 shrink-0 text-white stroke-[3]" />
             <div className="flex flex-col text-left sm:text-center">
               <span className="font-black text-xs sm:text-sm md:text-base uppercase tracking-wider">
-                OPPONENT HAS LEFT THE MATCH
+                {t('match.opponentLeftTitle', 'OPPONENT HAS LEFT THE MATCH')}
               </span>
               <span className="text-[11px] sm:text-xs font-bold text-rose-100">
-                Your opponent disconnected or returned to the main menu.
+                {t('match.opponentLeftDesc', 'Your opponent disconnected or returned to the main menu.')}
               </span>
             </div>
           </motion.div>
@@ -241,10 +243,10 @@ export const SurvivalOnlineResultsPage: React.FC<SurvivalOnlineResultsPageProps>
             {isPlayerDefeated && <AlertTriangle className="w-6 h-6 sm:w-8 sm:h-8 text-white" />}
             <span>
               {isPlayerWinner
-                ? '★ SURVIVAL VICTORY! ★'
+                ? `★ ${t('result.survivalVictory', 'SURVIVAL VICTORY!')} ★`
                 : isDraw
-                ? 'HONOURS EVEN (TIE)'
-                : 'SURVIVAL DEFEAT'}
+                ? t('result.draw', 'HONOURS EVEN (TIE)')
+                : t('result.survivalDefeat', 'SURVIVAL DEFEAT')}
             </span>
           </div>
         </motion.div>
@@ -260,7 +262,7 @@ export const SurvivalOnlineResultsPage: React.FC<SurvivalOnlineResultsPageProps>
           <div className="flex items-center justify-between mb-3 sm:mb-5 pb-2.5 border-b-2 border-black/10">
             <span className="text-xs font-black uppercase text-slate-800 tracking-wider flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse inline-block" />
-              FINAL REMAINING LIVES • 1v1 DUEL
+              {t('survival.livesRemaining', 'FINAL REMAINING LIVES')} • 1v1 DUEL
             </span>
           </div>
 
@@ -288,7 +290,7 @@ export const SurvivalOnlineResultsPage: React.FC<SurvivalOnlineResultsPageProps>
                         {country.name}
                       </span>
                       <span className="text-[9px] sm:text-xs font-black uppercase px-2 py-0.5 rounded-md bg-amber-400 text-black border border-black shadow-2xs">
-                        YOU
+                        {t('common.you', 'YOU')}
                       </span>
                     </div>
                     <div className="text-[11px] sm:text-xs text-slate-600 font-black">
@@ -299,7 +301,7 @@ export const SurvivalOnlineResultsPage: React.FC<SurvivalOnlineResultsPageProps>
 
                 {isPlayerWinner && (
                   <span className="px-2.5 py-1 bg-emerald-500 text-white font-black text-[10px] sm:text-xs uppercase rounded-lg border border-black shadow-xs shrink-0">
-                    WINNER
+                    {t('status.winner', 'WINNER')}
                   </span>
                 )}
               </div>
@@ -310,7 +312,7 @@ export const SurvivalOnlineResultsPage: React.FC<SurvivalOnlineResultsPageProps>
                 <span className={`text-xs sm:text-sm font-black uppercase tracking-wider mt-0.5 ${
                   playerLives > 0 ? 'text-emerald-700' : 'text-rose-600'
                 }`}>
-                  {playerLives} / 3 LIVES {playerLives === 0 ? '(ELIMINATED)' : '(SURVIVED)'}
+                  {playerLives} / 3 {t('survival.livesRemaining', 'LIVES')} {playerLives === 0 ? `(${t('status.eliminated', 'ELIMINATED')})` : `(${t('status.survived', 'SURVIVED')})`}
                 </span>
               </div>
             </div>
@@ -337,7 +339,7 @@ export const SurvivalOnlineResultsPage: React.FC<SurvivalOnlineResultsPageProps>
                         {currentOpponent.name}
                       </span>
                       <span className="text-[9px] sm:text-xs font-black uppercase px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 border border-black shadow-2xs">
-                        OPPONENT
+                        {t('common.opponent', 'OPPONENT')}
                       </span>
                     </div>
                     <div className="text-[11px] sm:text-xs text-slate-600 font-black">
@@ -348,7 +350,7 @@ export const SurvivalOnlineResultsPage: React.FC<SurvivalOnlineResultsPageProps>
 
                 {isPlayerDefeated && (
                   <span className="px-2.5 py-1 bg-emerald-500 text-white font-black text-[10px] sm:text-xs uppercase rounded-lg border border-black shadow-xs shrink-0">
-                    WINNER
+                    {t('status.winner', 'WINNER')}
                   </span>
                 )}
               </div>
@@ -359,7 +361,7 @@ export const SurvivalOnlineResultsPage: React.FC<SurvivalOnlineResultsPageProps>
                 <span className={`text-xs sm:text-sm font-black uppercase tracking-wider mt-0.5 ${
                   opponentLives > 0 ? 'text-emerald-700' : 'text-rose-600'
                 }`}>
-                  {opponentLives} / 3 LIVES {opponentLives === 0 ? '(ELIMINATED)' : '(SURVIVED)'}
+                  {opponentLives} / 3 {t('survival.livesRemaining', 'LIVES')} {opponentLives === 0 ? `(${t('status.eliminated', 'ELIMINATED')})` : `(${t('status.survived', 'SURVIVED')})`}
                 </span>
               </div>
             </div>
@@ -381,10 +383,10 @@ export const SurvivalOnlineResultsPage: React.FC<SurvivalOnlineResultsPageProps>
             >
               <div>
                 <div className="font-black text-xs sm:text-base uppercase tracking-wide">
-                  ⚔️ Opponent requested a Survival Rematch!
+                  ⚔️ {t('rematch.survivalRequested', 'Opponent requested a Survival Rematch!')}
                 </div>
                 <div className="text-[11px] sm:text-xs font-bold text-slate-800">
-                  Accept to jump right back into the 1v1 Survival Duel!
+                  {t('rematch.survivalDesc', 'Accept to jump right back into the 1v1 Survival Duel!')}
                 </div>
               </div>
               <div className="flex items-center gap-2.5">
@@ -393,14 +395,14 @@ export const SurvivalOnlineResultsPage: React.FC<SurvivalOnlineResultsPageProps>
                   className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-white font-black text-xs uppercase rounded-xl border-2 border-black shadow-[0_2px_0_0_#000] cursor-pointer"
                 >
                   <Check className="w-4 h-4 inline mr-1" />
-                  Accept
+                  {t('rematch.accept', 'Accept')}
                 </button>
                 <button
                   onClick={handleDeclineRematch}
                   className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white font-black text-xs uppercase rounded-xl border-2 border-black shadow-[0_2px_0_0_#000] cursor-pointer"
                 >
                   <X className="w-4 h-4 inline mr-1" />
-                  Decline
+                  {t('rematch.decline', 'Decline')}
                 </button>
               </div>
             </motion.div>
@@ -427,17 +429,17 @@ export const SurvivalOnlineResultsPage: React.FC<SurvivalOnlineResultsPageProps>
           {rematchStatus === 'requesting' ? (
             <>
               <Loader2 className="w-5 h-5 animate-spin" />
-              <span>Waiting for Opponent...</span>
+              <span>{t('match.waitingOpponent', 'Waiting for Opponent...')}</span>
             </>
           ) : rematchStatus === 'accepted' ? (
             <>
               <Check className="w-5 h-5" />
-              <span>Starting Rematch...</span>
+              <span>{t('rematch.starting', 'Starting Rematch...')}</span>
             </>
           ) : (
             <>
               <RotateCcw className="w-5 h-5 stroke-[2.5]" />
-              <span>PLAY AGAIN</span>
+              <span>{t('btn.playAgain', 'PLAY AGAIN')}</span>
             </>
           )}
         </motion.button>
@@ -450,7 +452,7 @@ export const SurvivalOnlineResultsPage: React.FC<SurvivalOnlineResultsPageProps>
           className="w-full sm:flex-1 py-3.5 sm:py-4 px-6 rounded-[18px] sm:rounded-[22px] border-[3.5px] border-black bg-white hover:bg-slate-100 text-black font-black text-sm sm:text-base md:text-lg uppercase tracking-wider flex items-center justify-center gap-2.5 cursor-pointer shadow-[0_5px_0_0_#000] transition-colors"
         >
           <Home className="w-5 h-5 stroke-[2.5]" />
-          <span>GO BACK TO MENU</span>
+          <span>{t('btn.returnMenu', 'GO BACK TO MENU')}</span>
         </motion.button>
       </footer>
     </div>

@@ -278,22 +278,23 @@ export function getBotInstinctCountry(
 
 /**
  * Get bot profile specifically scaled for Wager Arenas by difficulty tier
+ * Supercharged IQ: High tactical intelligence, pinpoint accuracy, and lightning reaction times.
  */
 export function getBotProfileForWagerTier(
   tier: 'rookie' | 'pro' | 'champion' | 'legend',
   excludeUsernames: string[] = []
 ): BotProfile {
-  let minRating = 70;
-  let maxRating = 78;
+  let minRating = 84;
+  let maxRating = 89;
   if (tier === 'pro') {
-    minRating = 79;
-    maxRating = 87;
-  } else if (tier === 'champion') {
-    minRating = 88;
+    minRating = 90;
     maxRating = 94;
-  } else if (tier === 'legend') {
+  } else if (tier === 'champion') {
     minRating = 95;
-    maxRating = 99;
+    maxRating = 98;
+  } else if (tier === 'legend') {
+    minRating = 99;
+    maxRating = 100;
   }
 
   const excludeSet = new Set(excludeUsernames.map((u) => u.toLowerCase()));
@@ -303,45 +304,55 @@ export function getBotProfileForWagerTier(
   const pool = matches.length > 0 ? matches : BOT_PROFILES;
   const chosen = pool[Math.floor(Math.random() * pool.length)];
 
-  // Fine-tune AI response characteristics based on the wager tier
+  // Elite tactical AI tuning based on Wager Tier
   if (tier === 'rookie') {
     return {
       ...chosen,
-      skillRating: Math.min(chosen.skillRating, 78),
-      reactionTime: Math.max(chosen.reactionTime, 0.34),
-      flawFrequency: Math.max(chosen.flawFrequency, 0.28),
+      skillRating: Math.max(84, chosen.skillRating),
+      reactionTime: 0.18,
+      flawFrequency: 0.08,
+      playstyle: 'tactical_placer',
     };
   } else if (tier === 'pro') {
     return {
       ...chosen,
-      skillRating: Math.max(80, Math.min(chosen.skillRating, 87)),
-      reactionTime: Math.min(chosen.reactionTime, 0.28),
-      flawFrequency: 0.20,
+      skillRating: Math.max(90, Math.min(chosen.skillRating, 94)),
+      reactionTime: 0.12,
+      flawFrequency: 0.035,
+      playstyle: 'aggressive_curler',
     };
   } else if (tier === 'champion') {
     return {
       ...chosen,
-      skillRating: Math.max(89, Math.min(chosen.skillRating, 94)),
-      reactionTime: 0.20,
-      flawFrequency: 0.12,
+      skillRating: Math.max(95, Math.min(chosen.skillRating, 98)),
+      reactionTime: 0.07,
+      flawFrequency: 0.012,
+      playstyle: 'clutch_specialist',
     };
   } else {
-    // Legend tier: Apex intelligence
+    // Legend tier: Apex Grandmaster Intelligence (near-unbeatable precision)
     return {
       ...chosen,
-      skillRating: Math.max(96, chosen.skillRating),
-      reactionTime: 0.14,
-      flawFrequency: 0.05,
+      skillRating: 100,
+      reactionTime: 0.04,
+      flawFrequency: 0.002,
+      playstyle: 'clutch_specialist',
     };
   }
 }
 
 /**
  * Get bot profile scaled for Survival Arena by current streak
+ * Dynamically scales bot rating, tactical playstyles, reaction speeds, and precision as streaks climb.
  */
 export function getBotProfileForSurvival(streak: number = 0, excludeUsernames: string[] = []): BotProfile {
-  const minRating = Math.min(96, 72 + Math.floor(streak * 3));
-  const maxRating = Math.min(100, minRating + 8);
+  // Ultra-challenging streak scaling:
+  // 0-2: Tier 1 Master (Rating 84 - 89)
+  // 3-5: Tier 2 Elite (Rating 90 - 94)
+  // 6-9: Tier 3 Apex (Rating 95 - 98)
+  // 10+: Tier 4 World Legend (Rating 99 - 100)
+  const minRating = Math.min(99, 84 + Math.floor(streak * 2.0));
+  const maxRating = Math.min(100, minRating + 5);
   const excludeSet = new Set(excludeUsernames.map((u) => u.toLowerCase()));
   const matches = BOT_PROFILES.filter(
     (b) => !excludeSet.has(b.username.toLowerCase()) && b.skillRating >= minRating && b.skillRating <= maxRating
@@ -349,13 +360,25 @@ export function getBotProfileForSurvival(streak: number = 0, excludeUsernames: s
   const pool = matches.length > 0 ? matches : BOT_PROFILES;
   const chosen = pool[Math.floor(Math.random() * pool.length)];
 
-  const dynamicFlaw = Math.max(0.06, 0.28 - streak * 0.03);
-  const dynamicReaction = Math.max(0.15, 0.35 - streak * 0.025);
+  // High IQ scaling: AI calculates trajectory, goalkeeper position, and corner gaps rapidly
+  const dynamicFlaw = Math.max(0.005, 0.10 - streak * 0.012);
+  const dynamicReaction = Math.max(0.04, 0.18 - streak * 0.014);
+
+  // Playstyle evolves based on streak intensity
+  const playstyles: BotPlaystyle[] = streak >= 6
+    ? ['clutch_specialist', 'tactical_placer', 'aggressive_curler']
+    : streak >= 3
+    ? ['tactical_placer', 'aggressive_curler', 'power_striker']
+    : ['tactical_placer', 'aggressive_curler'];
+
+  const dynamicPlaystyle = playstyles[Math.floor(Math.random() * playstyles.length)];
 
   return {
     ...chosen,
+    playstyle: dynamicPlaystyle,
     reactionTime: dynamicReaction,
     flawFrequency: dynamicFlaw,
+    skillRating: Math.min(100, Math.max(minRating, chosen.skillRating)),
   };
 }
 

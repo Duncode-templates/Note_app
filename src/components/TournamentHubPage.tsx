@@ -14,6 +14,7 @@ import {
 import LazyFlagImage from './LazyFlagImage';
 import TrophyImage from './TrophyImage';
 import KnockoutBracketView from './KnockoutBracketView';
+import { useTranslation } from '../utils/i18n';
 
 interface TournamentHubPageProps {
   tournamentState: TournamentState;
@@ -30,6 +31,7 @@ export default function TournamentHubPage({
   onUpdateTournament,
   onCancelTournament,
 }: TournamentHubPageProps) {
+  const { t } = useTranslation();
   const {
     userCountry,
     userGroup,

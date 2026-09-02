@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ArrowLeft, ArrowRight, Trophy, Search, Check, Globe } from 'lucide-react';
 import { Country, getFlagUrl } from '../data/countries';
 import { QUALIFIED_WORLD_CUP_COUNTRIES } from '../data/tournamentData';
+import { useTranslation } from '../utils/i18n';
 import LazyFlagImage from './LazyFlagImage';
 import TrophyImage from './TrophyImage';
 
@@ -15,6 +16,7 @@ export default function TournamentTeamSelectionPage({
   onBack,
   onSelectCountry,
 }: TournamentTeamSelectionPageProps) {
+  const { t } = useTranslation();
   const [selectedTeam, setSelectedTeam] = useState<Country | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
@@ -73,7 +75,7 @@ export default function TournamentTeamSelectionPage({
           className="px-4 py-2.5 rounded-[18px] font-black uppercase tracking-wider bg-white text-black border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer flex items-center gap-2 text-xs sm:text-sm outline-none focus:outline-none"
         >
           <ArrowLeft className="w-5 h-5 text-black" />
-          <span>Back to Menu</span>
+          <span>{t('tournament.backToMenu', 'Back to Menu')}</span>
         </motion.button>
 
         <div className="bg-white border-[3.5px] border-black shadow-[0_6px_0_0_#000] rounded-[22px] px-5 py-3 flex items-center gap-3 sm:gap-4 text-left sm:text-right">
@@ -82,10 +84,10 @@ export default function TournamentTeamSelectionPage({
           </div>
           <div>
             <h1 className="text-xl sm:text-2xl md:text-3xl font-black uppercase tracking-wider text-black">
-              SELECT YOUR TEAM
+              {t('tournament.selectYourTeam', 'SELECT YOUR TEAM')}
             </h1>
             <p className="text-[11px] sm:text-xs text-slate-700 font-bold uppercase tracking-widest mt-0.5">
-              FIFA World Cup • 40 Qualified Nations (Groups A – J)
+              {t('tournament.worldCupQualifiedSub', 'FIFA World Cup • 40 Qualified Nations (Groups A – J)')}
             </p>
           </div>
         </div>
@@ -100,7 +102,7 @@ export default function TournamentTeamSelectionPage({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search country or group..."
+            placeholder={t('tournament.searchCountry', 'Search country or group...')}
             className="w-full pl-9 pr-4 py-2 bg-white rounded-full border-2 border-black text-xs sm:text-sm font-bold placeholder:text-slate-400 uppercase tracking-wider shadow-[0_3px_0_0_#000] focus:outline-none focus:ring-2 focus:ring-amber-400"
           />
         </div>
@@ -109,9 +111,9 @@ export default function TournamentTeamSelectionPage({
         <div className="flex items-center justify-between sm:justify-end gap-3 text-xs text-black font-black uppercase px-4 py-2 bg-amber-400 border-2 border-black rounded-full shadow-[0_3px_0_0_#000]">
           <span className="flex items-center gap-1.5">
             <Globe className="w-3.5 h-3.5" />
-            <span>{filteredCountries.length} Qualified Nations</span>
+            <span>{filteredCountries.length} {t('tournament.qualifiedNations', 'Qualified Nations')}</span>
           </span>
-          <span className="hidden sm:inline-block text-slate-900 font-bold">• Tap to Select</span>
+          <span className="hidden sm:inline-block text-slate-900 font-bold">• {t('tournament.tapToSelect', 'Tap to Select')}</span>
         </div>
       </div>
 
@@ -142,7 +144,7 @@ export default function TournamentTeamSelectionPage({
               {/* Selected Badge Overlay */}
               {isSelected && (
                 <div className="absolute top-0 right-0 bg-emerald-500 text-white font-black text-[9px] uppercase px-2.5 py-1 rounded-bl-[12px] border-b-2 border-l-2 border-black flex items-center gap-1 shadow-xs z-10">
-                  <Check className="w-3 h-3 stroke-[3]" /> SELECTED
+                  <Check className="w-3 h-3 stroke-[3]" /> {t('tournament.selected', 'SELECTED')}
                 </div>
               )}
 
@@ -153,7 +155,7 @@ export default function TournamentTeamSelectionPage({
                     isSelected ? 'bg-emerald-400 text-black' : 'bg-amber-400 text-black'
                   }`}
                 >
-                  {country.rankPoints} OVR
+                  {country.rankPoints} {t('tournament.ovr', 'OVR')}
                 </span>
 
                 <span className="text-[9px] font-black tracking-wider px-2 py-0.5 rounded-md bg-slate-900 text-amber-300 border border-black uppercase">
@@ -207,17 +209,17 @@ export default function TournamentTeamSelectionPage({
                       {selectedTeam.name}
                     </span>
                     <span className="text-[9px] font-black px-1.5 py-0.2 bg-amber-400 text-black border border-black rounded">
-                      {selectedTeam.rankPoints} OVR
+                      {selectedTeam.rankPoints} {t('tournament.ovr', 'OVR')}
                     </span>
                   </div>
                   <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">
-                    Random Group Draw on Tournament Entry
+                    {t('tournament.randomGroupDraw', 'Random Group Draw on Tournament Entry')}
                   </span>
                 </div>
               </div>
             ) : (
               <div className="bg-slate-100 border-2 border-dashed border-slate-400 rounded-2xl px-4 py-2.5 text-xs font-black uppercase text-slate-400">
-                TAP ANY COUNTRY TO SELECT YOUR TEAM
+                {t('tournament.tapAnyCountryPrompt', 'TAP ANY COUNTRY TO SELECT YOUR TEAM')}
               </div>
             )}
           </div>
@@ -236,7 +238,7 @@ export default function TournamentTeamSelectionPage({
                 : 'bg-slate-200 text-slate-400 border-[2.5px] border-slate-300 cursor-not-allowed opacity-60'
             }`}
           >
-            <span>ENTER WORLD CUP (GROUPS A - J)</span>
+            <span>{t('tournament.enterWorldCup', 'ENTER WORLD CUP (GROUPS A - J)')}</span>
             <ArrowRight className="w-5 h-5 stroke-[3]" />
           </button>
         </div>

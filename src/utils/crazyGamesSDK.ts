@@ -11,7 +11,12 @@
  * - Automatic migration from legacy localStorage to CrazyGames Data SDK
  */
 
-import { muteAllAudio, unmuteAllAudio } from './mediaPreloader';
+import {
+  muteCrazyGamesAudio,
+  unmuteCrazyGamesAudio,
+  muteAllAudio,
+  unmuteAllAudio,
+} from './mediaPreloader';
 
 export interface CrazyGamesUser {
   id?: string;
@@ -331,19 +336,19 @@ class CrazyGamesManager {
     const wrappedCallbacks: CrazyGamesAdCallbacks = {
       adStarted: () => {
         try {
-          muteAllAudio();
+          muteCrazyGamesAudio();
         } catch {}
         if (callbacks?.adStarted) callbacks.adStarted();
       },
       adFinished: () => {
         try {
-          unmuteAllAudio();
+          unmuteCrazyGamesAudio();
         } catch {}
         if (callbacks?.adFinished) callbacks.adFinished();
       },
       adError: (err) => {
         try {
-          unmuteAllAudio();
+          unmuteCrazyGamesAudio();
         } catch {}
         if (callbacks?.adError) callbacks.adError(err);
       },
@@ -710,6 +715,25 @@ class CrazyGamesManager {
       // Ignored
     }
     return null;
+  }
+
+  /**
+   * Retrieve platform language or system country code for localization
+   */
+  public getLanguage(): string {
+    const sysInfo = this.getSystemInfo();
+    if (sysInfo?.countryCode) {
+      return sysInfo.countryCode.toLowerCase();
+    }
+    if (typeof window !== 'undefined' && window.location) {
+      const params = new URLSearchParams(window.location.search);
+      const paramLang = params.get('lang') || params.get('locale');
+      if (paramLang) return paramLang.toLowerCase();
+    }
+    if (typeof navigator !== 'undefined' && navigator.language) {
+      return navigator.language.substring(0, 2).toLowerCase();
+    }
+    return 'en';
   }
 
   // ==========================================

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Target, Trophy, Star, Shield, ArrowRight, Play, Flame } from 'lucide-react';
 import { TARGET_SMASH_STAGES } from '../data/targetSmashData';
 import { TargetSmashStage } from '../types';
+import { useTranslation } from '../utils/i18n';
 import CoinIcon from './CoinIcon';
 
 interface TargetSmashHubModalProps {
@@ -22,6 +23,7 @@ export default function TargetSmashHubModal({
   stageHighScores,
   stageStars,
 }: TargetSmashHubModalProps) {
+  const { t } = useTranslation();
   const [selectedStageNumber, setSelectedStageNumber] = useState<number>(() => Math.min(unlockedStageNumber, TARGET_SMASH_STAGES.length));
 
   if (!isOpen) return null;
@@ -57,14 +59,14 @@ export default function TargetSmashHubModal({
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider bg-rose-500 text-white px-2 py-0.5 rounded-full border border-black">
-                  NEW ARCADE MODE
+                  {t('targetSmash.arcadeBadge', 'NEW ARCADE MODE')}
                 </span>
                 <span className="text-[10px] sm:text-xs font-bold text-amber-300 uppercase tracking-wider">
-                  Trickshot &amp; Targets
+                  {t('targetSmash.trickshotSubtitle', 'Trickshot & Targets')}
                 </span>
               </div>
               <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-amber-200 to-white">
-                TARGET SMASH
+                {t('targetSmash.title', 'TARGET SMASH')}
               </h2>
             </div>
           </div>
@@ -73,10 +75,10 @@ export default function TargetSmashHubModal({
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-black text-slate-300 uppercase tracking-wider">
-                Select Stage (1 - 10)
+                {t('targetSmash.selectStage', 'Select Stage (1 - 10)')}
               </span>
               <span className="text-xs font-black text-amber-400">
-                Unlocked: {unlockedStageNumber} / 10
+                {t('targetSmash.unlocked', 'Unlocked')}: {unlockedStageNumber} / 10
               </span>
             </div>
 
@@ -136,16 +138,16 @@ export default function TargetSmashHubModal({
             <div className="flex items-start justify-between gap-2 mb-2">
               <div>
                 <span className="text-[11px] font-black text-amber-400 uppercase tracking-wider">
-                  Stage {currentStage.stageNumber} • Objective
+                  {t('targetSmash.stage', 'Stage')} {currentStage.stageNumber} • {t('targetSmash.objective', 'Objective')}
                 </span>
                 <h3 className="text-lg sm:text-xl font-black text-white uppercase tracking-wider">
                   {currentStage.name}
                 </h3>
               </div>
               <div className="text-right">
-                <span className="text-[10px] font-bold text-slate-400 uppercase block">High Score</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase block">{t('targetSmash.highScore', 'High Score')}</span>
                 <span className="text-sm sm:text-base font-black text-emerald-400">
-                  {currentBest.toLocaleString()} PTS
+                  {currentBest.toLocaleString()} {t('targetSmash.pts', 'PTS')}
                 </span>
               </div>
             </div>
@@ -157,16 +159,16 @@ export default function TargetSmashHubModal({
             {/* Stage Specs Badges */}
             <div className="grid grid-cols-3 gap-2 text-center text-black">
               <div className="bg-white/95 rounded-[12px] p-1.5 sm:p-2 border-2 border-black">
-                <span className="text-[9px] sm:text-[10px] font-bold text-slate-600 uppercase block">Distance</span>
+                <span className="text-[9px] sm:text-[10px] font-bold text-slate-600 uppercase block">{t('targetSmash.distance', 'Distance')}</span>
                 <span className="text-xs sm:text-sm font-black uppercase text-black">{currentStage.distance}m</span>
               </div>
               <div className="bg-white/95 rounded-[12px] p-1.5 sm:p-2 border-2 border-black">
-                <span className="text-[9px] sm:text-[10px] font-bold text-slate-600 uppercase block">Defenders Wall</span>
-                <span className="text-xs sm:text-sm font-black uppercase text-black">{currentStage.wallSize} Players</span>
+                <span className="text-[9px] sm:text-[10px] font-bold text-slate-600 uppercase block">{t('targetSmash.defendersWall', 'Defenders Wall')}</span>
+                <span className="text-xs sm:text-sm font-black uppercase text-black">{currentStage.wallSize} {t('targetSmash.players', 'Players')}</span>
               </div>
               <div className="bg-white/95 rounded-[12px] p-1.5 sm:p-2 border-2 border-black">
-                <span className="text-[9px] sm:text-[10px] font-bold text-slate-600 uppercase block">Target Score</span>
-                <span className="text-xs sm:text-sm font-black uppercase text-amber-600">{currentStage.targetScore} PTS</span>
+                <span className="text-[9px] sm:text-[10px] font-bold text-slate-600 uppercase block">{t('targetSmash.targetScore', 'Target Score')}</span>
+                <span className="text-xs sm:text-sm font-black uppercase text-amber-600">{currentStage.targetScore} {t('targetSmash.pts', 'PTS')}</span>
               </div>
             </div>
           </div>
@@ -188,7 +190,7 @@ export default function TargetSmashHubModal({
             }`}
           >
             <Play className="w-5 h-5 sm:w-6 sm:h-6 fill-black text-black" />
-            <span>{isCurrentUnlocked ? `PLAY STAGE #${currentStage.stageNumber}` : 'STAGE LOCKED'}</span>
+            <span>{isCurrentUnlocked ? `${t('targetSmash.playStage', 'PLAY STAGE')} #${currentStage.stageNumber}` : t('targetSmash.stageLocked', 'STAGE LOCKED')}</span>
             <ArrowRight className="w-5 h-5 sm:w-6 sm:h-6 stroke-[3]" />
           </motion.button>
         </motion.div>

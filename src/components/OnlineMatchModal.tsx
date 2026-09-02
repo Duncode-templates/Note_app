@@ -16,6 +16,7 @@ import { Country, COUNTRIES_DATA } from '../data/countries';
 import { onlineMatchManager } from '../utils/onlineMatchManager';
 import { OnlineMatchRoom } from '../types';
 import { crazyGamesSDK } from '../utils/crazyGamesSDK';
+import { useTranslation } from '../utils/i18n';
 
 interface OnlineMatchModalProps {
   isOpen: boolean;
@@ -44,6 +45,7 @@ export default function OnlineMatchModal({
   onClose,
   onRoomConnected,
 }: OnlineMatchModalProps) {
+  const { t } = useTranslation();
   const [step, setStep] = useState<OnlineStep>('menu');
   const [roomCodeInput, setRoomCodeInput] = useState('');
   const [createdRoomCode, setCreatedRoomCode] = useState('');
@@ -247,12 +249,12 @@ export default function OnlineMatchModal({
           {step === 'menu' && (
             <div>
               <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-wider text-black mb-1">
-                {title || (gameMode === 'survival' ? 'ONLINE SURVIVAL 1V1' : 'ONLINE MATCH')}
+                {title || (gameMode === 'survival' ? t('survival.onlineDuel', 'ONLINE SURVIVAL 1V1') : t('online.title', 'ONLINE MATCH'))}
               </h2>
               <p className="text-slate-600 text-xs sm:text-sm mb-6 font-bold uppercase tracking-wider">
                 {subtitle || (gameMode === 'survival'
-                  ? '3 Lives • Live 1v1 Survival Duel • Endless Streak Challenge'
-                  : 'Connect and pick your country together in real-time:')}
+                  ? t('survival.duelSub', '3 Lives • Live 1v1 Survival Duel • Endless Streak Challenge')
+                  : t('online.connectSub', 'Connect and pick your country together in real-time:'))}
               </p>
 
               {/* 3 Main Action Buttons */}
@@ -267,7 +269,7 @@ export default function OnlineMatchModal({
                 >
                   <div className="flex items-center gap-3">
                     <Zap className="w-5 h-5 fill-black text-black" />
-                    <span>FIND A MATCH</span>
+                    <span>{t('online.findMatch', 'FIND A MATCH')}</span>
                   </div>
                 </motion.button>
 
@@ -281,7 +283,7 @@ export default function OnlineMatchModal({
                 >
                   <div className="flex items-center gap-3">
                     <Plus className="w-5 h-5 text-black" />
-                    <span>CREATE A ROOM</span>
+                    <span>{t('online.createRoom', 'CREATE A ROOM')}</span>
                   </div>
                 </motion.button>
 
@@ -295,7 +297,7 @@ export default function OnlineMatchModal({
                 >
                   <div className="flex items-center gap-3">
                     <LogIn className="w-5 h-5 text-black" />
-                    <span>JOIN ROOM</span>
+                    <span>{t('online.joinRoom', 'JOIN ROOM')}</span>
                   </div>
                 </motion.button>
               </div>
@@ -312,10 +314,10 @@ export default function OnlineMatchModal({
               </div>
 
               <h2 className="text-xl sm:text-2xl font-black uppercase tracking-wider text-black mb-1">
-                ROOM CREATED
+                {t('online.roomCreated', 'ROOM CREATED')}
               </h2>
               <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-4">
-                Share this 5-digit code with your opponent
+                {t('online.shareCode', 'Share this 5-digit code with your opponent')}
               </p>
 
               {/* 5-Digit Code Card */}
@@ -330,7 +332,7 @@ export default function OnlineMatchModal({
                     className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-400 hover:bg-amber-300 active:scale-95 text-black rounded-[12px] border-[2px] border-black font-black text-xs uppercase cursor-pointer shadow-xs transition-all"
                   >
                     {isCopied ? <Check className="w-4 h-4 text-emerald-900" /> : <Copy className="w-4 h-4 text-black" />}
-                    <span>{isCopied ? 'CODE COPIED!' : 'COPY CODE'}</span>
+                    <span>{isCopied ? t('online.codeCopied', 'CODE COPIED!') : t('online.copyCode', 'COPY CODE')}</span>
                   </button>
 
                   <button
@@ -338,7 +340,7 @@ export default function OnlineMatchModal({
                     className="flex items-center gap-1.5 px-3.5 py-2 bg-sky-400 hover:bg-sky-300 active:scale-95 text-black rounded-[12px] border-[2px] border-black font-black text-xs uppercase cursor-pointer shadow-xs transition-all"
                   >
                     {isLinkCopied ? <Check className="w-4 h-4 text-emerald-900" /> : <LinkIcon className="w-4 h-4 text-black" />}
-                    <span>{isLinkCopied ? 'LINK COPIED!' : 'INVITE LINK'}</span>
+                    <span>{isLinkCopied ? t('online.linkCopied', 'LINK COPIED!') : t('online.inviteLink', 'INVITE LINK')}</span>
                   </button>
                 </div>
               </div>
@@ -347,7 +349,7 @@ export default function OnlineMatchModal({
               <div className="flex items-center gap-2 mb-6">
                 <Loader2 className="w-5 h-5 text-sky-600 animate-spin" />
                 <span className="font-black text-xs uppercase text-slate-700 tracking-wider">
-                  Waiting for opponent to enter code...
+                  {t('online.waitingOpponentCode', 'Waiting for opponent to enter code...')}
                 </span>
               </div>
 
@@ -358,7 +360,7 @@ export default function OnlineMatchModal({
                 onClick={handleCancelAndBack}
                 className="w-full py-3.5 rounded-[18px] font-black text-sm uppercase tracking-wider bg-rose-500 text-white border-[3px] border-black shadow-[0_4px_0_0_#000] cursor-pointer"
               >
-                CANCEL ROOM
+                {t('online.cancelRoom', 'CANCEL ROOM')}
               </motion.button>
             </div>
           )}
@@ -373,10 +375,10 @@ export default function OnlineMatchModal({
               </div>
 
               <h2 className="text-xl sm:text-2xl font-black uppercase tracking-wider text-black mb-1">
-                JOIN A ROOM
+                {t('online.joinRoomTitle', 'JOIN A ROOM')}
               </h2>
               <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-4">
-                Enter the 5-digit room code:
+                {t('online.enterCode', 'Enter the 5-digit room code:')}
               </p>
 
               {/* Error Toast */}
@@ -417,14 +419,14 @@ export default function OnlineMatchModal({
                   onClick={handleConfirmJoinRoom}
                   className="w-full py-3.5 rounded-[18px] font-black text-base uppercase tracking-wider bg-emerald-400 text-black border-[3px] border-black shadow-[0_4px_0_0_#000] cursor-pointer"
                 >
-                  JOIN ROOM
+                  {t('online.joinRoom', 'JOIN ROOM')}
                 </motion.button>
 
                 <button
                   onClick={handleCancelAndBack}
                   className="w-full py-2.5 text-xs font-black uppercase text-slate-500 hover:text-black cursor-pointer"
                 >
-                  CANCEL
+                  {t('common.cancel', 'CANCEL')}
                 </button>
               </div>
             </div>
@@ -450,15 +452,15 @@ export default function OnlineMatchModal({
               </div>
 
               <h2 className="text-xl sm:text-2xl font-black uppercase tracking-wider text-black mb-1">
-                SEARCHING FOR MATCH
+                {t('online.searchingMatch', 'SEARCHING FOR MATCH')}
               </h2>
               <p className="text-slate-600 text-xs font-bold uppercase tracking-wider mb-1">
-                Looking for an online opponent... ({searchTimer}s)
+                {t('online.lookingOpponent', 'Looking for an online opponent...')} ({searchTimer}s)
               </p>
               <p className="text-[11px] text-slate-400 mb-5">
                 {searchTimer >= 15
-                  ? 'Still searching... You can also create a private room to share with a friend!'
-                  : 'Pairing automatically with anyone searching worldwide'}
+                  ? t('online.stillSearching', 'Still searching... You can also create a private room to share with a friend!')
+                  : t('online.pairingAuto', 'Pairing automatically with anyone searching worldwide')}
               </p>
 
               <div className="w-full flex flex-col gap-2.5">
@@ -469,7 +471,7 @@ export default function OnlineMatchModal({
                     onClick={handleStartFindMatch}
                     className="w-full py-3 rounded-[16px] font-black text-sm uppercase tracking-wider bg-amber-400 text-black border-[3px] border-black shadow-[0_3px_0_0_#000] cursor-pointer"
                   >
-                    RETRY SEARCH
+                    {t('online.retrySearch', 'RETRY SEARCH')}
                   </motion.button>
                 )}
 
@@ -479,7 +481,7 @@ export default function OnlineMatchModal({
                   onClick={handleCancelAndBack}
                   className="w-full py-3.5 rounded-[18px] font-black text-sm uppercase tracking-wider bg-rose-500 text-white border-[3px] border-black shadow-[0_4px_0_0_#000] cursor-pointer"
                 >
-                  CANCEL SEARCH
+                  {t('online.cancelSearch', 'CANCEL SEARCH')}
                 </motion.button>
               </div>
             </div>

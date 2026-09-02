@@ -8,6 +8,7 @@ import { onlineMatchManager } from '../utils/onlineMatchManager';
 import LazyFlagImage from './LazyFlagImage';
 import TrophyImage from './TrophyImage';
 import { getStickerAvatarUrl } from '../data/botProfiles';
+import { useTranslation } from '../utils/i18n';
 
 export interface MatchStats {
   playerShots: number;
@@ -67,6 +68,7 @@ export default function MatchResultsPage({
   onReturnToTournament,
   onReturnToDivisions,
 }: MatchResultsPageProps) {
+  const { t } = useTranslation();
   const [currentLocalCountry, setCurrentLocalCountry] = useState<Country>(initialCountry);
   const [currentOppCountry, setCurrentOppCountry] = useState<Country | undefined>(initialOpponentCountry);
   const isBotOpponent = onlineMatchManager.isCurrentRoomBotMatch() || Boolean(
@@ -411,27 +413,27 @@ export default function MatchResultsPage({
           >
             {hasPenalties
               ? isPlayerWinner
-                ? `★ WON ON PENALTIES (${effectiveHomePen}-${effectiveAwayPen})! ★`
-                : `LOST ON PENALTIES (${effectiveHomePen}-${effectiveAwayPen})`
+                ? `★ ${t('result.wonOnPenalties', 'WON ON PENALTIES')} (${effectiveHomePen}-${effectiveAwayPen})! ★`
+                : `${t('result.lostOnPenalties', 'LOST ON PENALTIES')} (${effectiveHomePen}-${effectiveAwayPen})`
               : isSurvival
               ? isPlayerWinner
-                ? '★ SURVIVAL VICTORY! ★'
+                ? `★ ${t('result.survivalVictory', 'SURVIVAL VICTORY!')} ★`
                 : isDraw
-                ? 'HONOURS EVEN (TIE - EQUAL LIVES)'
-                : 'SURVIVAL DEFEAT'
+                ? t('result.draw', 'HONOURS EVEN (TIE)')
+                : t('result.survivalDefeat', 'SURVIVAL DEFEAT')
               : isPlayerWinner
-              ? '★ MATCH VICTORY! ★'
+              ? `★ ${t('result.victory', 'MATCH VICTORY!')} ★`
               : isDraw
-              ? 'HONOURS EVEN (DRAW)'
-              : 'MATCH DEFEAT'}
+              ? t('result.draw', 'HONOURS EVEN (DRAW)')
+              : t('result.defeat', 'MATCH DEFEAT')}
           </div>
           {isSurvival && (
             <div className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-wider bg-white/90 px-4 py-1 rounded-full border-2 border-black shadow-2xs">
               {isDraw
-                ? `100s Time Expired • Both Teams Finished with ${homeScore} Lives`
+                ? `100s • ${t('result.draw', 'Tie - Equal Lives')}: ${homeScore} - ${awayScore}`
                 : isPlayerWinner
-                ? `Won with ${homeScore} Lives Remaining vs ${awayScore}`
-                : `Defeated with ${homeScore} Lives Remaining vs ${awayScore}`}
+                ? `${t('result.victory', 'Won')} (${homeScore} vs ${awayScore} ${t('survival.livesRemaining', 'Lives')})`
+                : `${t('result.defeat', 'Defeated')} (${homeScore} vs ${awayScore} ${t('survival.livesRemaining', 'Lives')})`}
             </div>
           )}
         </motion.div>
@@ -458,20 +460,20 @@ export default function MatchResultsPage({
                 } inline-block`}
               />
               {isSurvival
-                ? 'ONLINE 1V1 SURVIVAL DUEL • 100S TIME-UP & LIVES'
+                ? t('survival.title', 'ONLINE 1V1 SURVIVAL DUEL • 100S')
                 : isTournament
-                ? 'WORLD CUP FIXTURE'
+                ? t('tournament.fixture', 'WORLD CUP FIXTURE')
                 : isDivision
-                ? (stageTitle ? stageTitle.toUpperCase() : 'DIVISION MATCH')
+                ? (stageTitle ? stageTitle.toUpperCase() : t('mode.division', 'DIVISION MATCH'))
                 : isOnlineMatch
                 ? isOpponentOffline
-                  ? 'ONLINE MATCH • OPPONENT DISCONNECTED'
-                  : `ONLINE MATCH • ROOM #${onlineMatchRoom?.roomId || onlineMatchManager.currentRoom?.roomId || 'LIVE'}`
-                : 'QUICK MATCH'}
+                  ? `${t('common.online', 'ONLINE')} • ${t('status.disconnected', 'OPPONENT DISCONNECTED')}`
+                  : `${t('common.online', 'ONLINE MATCH')} • ROOM #${onlineMatchRoom?.roomId || onlineMatchManager.currentRoom?.roomId || 'LIVE'}`
+                : t('mode.quickPlay', 'QUICK MATCH')}
             </span>
             {hasPenalties && (
               <span className="px-3 py-1 bg-amber-400 text-black border border-black rounded-full font-black text-[11px] uppercase tracking-wider shadow-2xs">
-                PENALTY SHOOTOUT: {effectiveHomePen} - {effectiveAwayPen}
+                {t('hud.penaltyShootout', 'PENALTY SHOOTOUT')}: {effectiveHomePen} - {effectiveAwayPen}
               </span>
             )}
           </div>
@@ -492,7 +494,7 @@ export default function MatchResultsPage({
                 </span>
                 <div className="flex flex-wrap items-center justify-center gap-1 mt-1">
                   <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-emerald-900 bg-emerald-300 px-2.5 py-0.5 rounded-full border border-black shadow-2xs">
-                    YOU
+                    {t('common.you', 'YOU')}
                   </span>
                 </div>
               </div>
@@ -527,11 +529,11 @@ export default function MatchResultsPage({
                 </span>
               ) : isSurvival ? (
                 <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-black mt-2 bg-amber-200 px-3 py-0.5 rounded-full border border-black shadow-2xs">
-                  FINAL REMAINING LIVES
+                  {t('survival.livesRemaining', 'FINAL REMAINING LIVES')}
                 </span>
               ) : (
                 <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-700 mt-2">
-                  FINAL SCORE
+                  {t('result.finalScore', 'FINAL SCORE')}
                 </span>
               )}
             </div>
@@ -561,9 +563,9 @@ export default function MatchResultsPage({
                   >
                     {isOnlineMatch
                       ? isOpponentOffline
-                        ? 'OPPONENT (LEFT)'
-                        : 'OPPONENT'
-                      : 'OPPONENT'}
+                        ? `${t('common.opponent', 'OPPONENT')} (${t('status.left', 'LEFT')})`
+                        : t('common.opponent', 'OPPONENT')
+                      : t('common.opponent', 'OPPONENT')}
                   </span>
                 </div>
               </div>
@@ -573,16 +575,16 @@ export default function MatchResultsPage({
           {/* Quick Shot Stats Summary Bar */}
           <div className="mt-6 pt-4 border-t-2 border-black/10 flex flex-wrap items-center justify-around gap-4 text-xs font-bold text-slate-700">
             <div className="flex items-center gap-1.5">
-              <span className="font-black text-black">Shots:</span>
+              <span className="font-black text-black">{t('stats.shots', 'Shots')}:</span>
               <span>{matchStats.playerShots} - {matchStats.aiShots}</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="font-black text-black">Goals:</span>
+              <span className="font-black text-black">{t('stats.goals', 'Goals')}:</span>
               <span>{matchStats.playerGoals} - {matchStats.aiGoals}</span>
             </div>
             {isDivision && (
               <div className="flex items-center gap-1.5 px-3 py-1 bg-amber-100 border border-black rounded-full shadow-2xs">
-                <span className="font-black text-black">Division Reward:</span>
+                <span className="font-black text-black">{t('division.reward', 'Division Reward')}:</span>
                 <span className="font-black text-amber-900 font-mono">
                   {isPlayerWinner ? '+3 PTS • +10 🪙' : isDraw ? '+1 PT • 0 🪙' : '0 🪙 (Ranked Loss Penalty)'}
                 </span>
@@ -667,7 +669,7 @@ export default function MatchResultsPage({
               onClick={onReturnToTournament}
               className="w-full sm:w-auto min-w-[280px] py-4 px-8 rounded-[24px] bg-emerald-400 hover:bg-emerald-300 active:scale-98 text-black font-black text-base sm:text-lg uppercase tracking-wider border-[3.5px] border-black shadow-[0_7px_0_0_#000] cursor-pointer transition-all flex items-center justify-center gap-3"
             >
-              <span>CONTINUE TO TOURNAMENT →</span>
+              <span>{t('tournament.continue', 'CONTINUE TO TOURNAMENT')} →</span>
             </motion.button>
           ) : onReturnToDivisions ? (
             <motion.button
@@ -676,7 +678,7 @@ export default function MatchResultsPage({
               onClick={onReturnToDivisions}
               className="w-full sm:w-auto min-w-[280px] py-4 px-8 rounded-[24px] bg-amber-400 hover:bg-amber-300 active:scale-98 text-black font-black text-base sm:text-lg uppercase tracking-wider border-[3.5px] border-black shadow-[0_7px_0_0_#000] cursor-pointer transition-all flex items-center justify-center gap-3"
             >
-              <span>RETURN TO DIVISION HUB →</span>
+              <span>{t('division.return', 'RETURN TO DIVISION HUB')} →</span>
             </motion.button>
           ) : (
             <>
@@ -698,12 +700,12 @@ export default function MatchResultsPage({
                 {rematchStatus === 'requesting' ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
-                    <span>WAITING FOR OPPONENT...</span>
+                    <span>{t('match.waitingOpponent', 'WAITING FOR OPPONENT...')}</span>
                   </>
                 ) : (
                   <>
                     <RotateCcw className="w-5 h-5 stroke-[2.5]" />
-                    <span>{isOpponentOffline ? 'PLAY AGAIN UNAVAILABLE' : '↻ PLAY AGAIN'}</span>
+                    <span>{isOpponentOffline ? t('match.playAgainUnavailable', 'PLAY AGAIN UNAVAILABLE') : `↻ ${t('btn.playAgain', 'PLAY AGAIN')}`}</span>
                   </>
                 )}
               </motion.button>
@@ -728,7 +730,7 @@ export default function MatchResultsPage({
                   }`}
                 >
                   <Users className="w-4 h-4 stroke-[2.5]" />
-                  <span>CHANGE TEAMS</span>
+                  <span>{t('match.changeTeams', 'CHANGE TEAMS')}</span>
                 </motion.button>
               )}
             </>
@@ -745,7 +747,7 @@ export default function MatchResultsPage({
                 : 'bg-white hover:bg-slate-100 active:scale-98 text-black'
             }`}
           >
-            <span>← MAIN MENU</span>
+            <span>← {t('btn.returnMenu', 'MAIN MENU')}</span>
           </motion.button>
         </motion.div>
 
@@ -773,10 +775,10 @@ export default function MatchResultsPage({
 
               <div className="flex flex-col gap-1.5">
                 <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-wider text-black">
-                  REMATCH INVITATION!
+                  {t('rematch.invitationTitle', 'REMATCH INVITATION!')}
                 </h2>
                 <p className="text-xs sm:text-sm font-bold text-slate-700">
-                  Your opponent wants to play another 1v1 match. Do you accept?
+                  {t('rematch.invitationDesc', 'Your opponent wants to play another 1v1 match. Do you accept?')}
                 </p>
               </div>
 
@@ -785,13 +787,13 @@ export default function MatchResultsPage({
                   onClick={handleDeclineRematch}
                   className="flex-1 py-3.5 px-4 rounded-[20px] bg-slate-200 hover:bg-slate-300 active:scale-95 text-black font-black text-xs sm:text-sm uppercase tracking-wider border-[3px] border-black shadow-[0_4px_0_0_#000] cursor-pointer transition-all"
                 >
-                  DECLINE
+                  {t('rematch.decline', 'DECLINE')}
                 </button>
                 <button
                   onClick={handleAcceptRematch}
                   className="flex-1 py-3.5 px-4 rounded-[20px] bg-emerald-400 hover:bg-emerald-300 active:scale-95 text-black font-black text-xs sm:text-sm uppercase tracking-wider border-[3px] border-black shadow-[0_4px_0_0_#000] cursor-pointer transition-all"
                 >
-                  ACCEPT REMATCH
+                  {t('rematch.accept', 'ACCEPT REMATCH')}
                 </button>
               </div>
             </motion.div>
@@ -819,10 +821,10 @@ export default function MatchResultsPage({
               <div className="flex items-center justify-between border-b-2 border-black/10 pb-3">
                 <div>
                   <h3 className="text-xl sm:text-2xl font-black uppercase tracking-wider text-black">
-                    SELECT NEW TEAM
+                    {t('team.selectNew', 'SELECT NEW TEAM')}
                   </h3>
                   <p className="text-xs font-bold text-slate-600">
-                    Switch your national team for the upcoming match
+                    {t('team.selectNewDesc', 'Switch your national team for the upcoming match')}
                   </p>
                 </div>
                 <button
@@ -838,7 +840,7 @@ export default function MatchResultsPage({
                 <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
                 <input
                   type="text"
-                  placeholder="Search countries..."
+                  placeholder={t('search.countries', 'Search countries...')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-100 border-2 border-black rounded-[16px] text-xs sm:text-sm font-bold uppercase tracking-wider placeholder:normal-case placeholder:text-slate-400 outline-none focus:bg-white"

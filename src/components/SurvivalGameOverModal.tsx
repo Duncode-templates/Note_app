@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Flame, Trophy, RotateCcw, X, Heart, Sparkles, Film } from 'lucide-react';
 import { crazyGamesSDK } from '../utils/crazyGamesSDK';
+import { useTranslation } from '../utils/i18n';
 
 interface SurvivalGameOverModalProps {
   isOpen: boolean;
@@ -24,6 +25,7 @@ export default function SurvivalGameOverModal({
   onExit,
   canRevive,
 }: SurvivalGameOverModalProps) {
+  const { t } = useTranslation();
   const [isAdLoading, setIsAdLoading] = useState(false);
   const mountTimeRef = useRef<number>(0);
 
@@ -94,28 +96,28 @@ export default function SurvivalGameOverModal({
           {isNewBest && (
             <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-amber-400 text-black border border-black font-black text-[10px] uppercase tracking-wider mb-2">
               <Sparkles className="w-3.5 h-3.5" />
-              <span>NEW PERSONAL RECORD!</span>
+              <span>{t('result.newRecord', 'NEW PERSONAL RECORD!')}</span>
             </div>
           )}
 
           <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-wider text-white mb-0.5">
-            RUN ENDED!
+            {t('survival.runEnded', 'RUN ENDED!')}
           </h2>
           <p className="text-slate-300 text-xs sm:text-sm font-bold uppercase tracking-wider mb-4">
-            Survival Challenge Complete
+            {t('survival.challengeComplete', 'Survival Challenge Complete')}
           </p>
 
           {/* Big Streak Card */}
           <div className="bg-black/60 border-[2.5px] border-black rounded-[22px] p-4 mb-4 flex flex-col items-center justify-center shadow-inner">
             <span className="text-[10px] font-black text-rose-400 uppercase tracking-widest mb-1">
-              Final Goals Streak
+              {t('survival.finalGoalsStreak', 'Final Goals Streak')}
             </span>
             <div className="flex items-center gap-2">
               <span className="text-4xl sm:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-200 to-white">
                 {streak}
               </span>
               <span className="text-base sm:text-lg font-black text-slate-300 uppercase">
-                GOALS
+                {t('common.goals', 'GOALS')}
               </span>
             </div>
           </div>
@@ -123,13 +125,13 @@ export default function SurvivalGameOverModal({
           {/* Stats Breakdown */}
           <div className="bg-slate-800/80 border-[2px] border-black rounded-[18px] p-3 mb-5 flex items-center justify-around text-xs">
             <div className="flex flex-col items-center">
-              <span className="text-[10px] font-bold text-slate-400 uppercase">Total Score</span>
-              <span className="font-black text-amber-400 text-sm">{score.toLocaleString()} PTS</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase">{t('result.totalScore', 'Total Score')}</span>
+              <span className="font-black text-amber-400 text-sm">{score.toLocaleString()} {t('common.pts', 'PTS')}</span>
             </div>
             <div className="w-[1px] h-8 bg-slate-700" />
             <div className="flex flex-col items-center">
-              <span className="text-[10px] font-bold text-slate-400 uppercase">Challenge Mode</span>
-              <span className="font-black text-rose-400 text-sm">SURVIVAL</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase">{t('survival.challengeMode', 'Challenge Mode')}</span>
+              <span className="font-black text-rose-400 text-sm">{t('survival.streak', 'SURVIVAL')}</span>
             </div>
           </div>
 
@@ -148,7 +150,7 @@ export default function SurvivalGameOverModal({
                 className="w-full py-3.5 px-5 rounded-[18px] font-black text-sm sm:text-base uppercase tracking-wider bg-gradient-to-r from-emerald-400 to-green-400 hover:from-emerald-300 hover:to-green-300 text-black border-[3px] border-black shadow-[0_5px_0_0_#000] flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Film className="w-5 h-5" />
-                <span>{isAdLoading ? 'LOADING AD...' : 'REVIVE (+1 EXTRA LIFE)'}</span>
+                <span>{isAdLoading ? t('ads.loading', 'LOADING AD...') : t('survival.reviveExtraLife', 'REVIVE (+1 EXTRA LIFE)')}</span>
               </motion.button>
             )}
 
@@ -163,7 +165,7 @@ export default function SurvivalGameOverModal({
               className="w-full py-3 px-5 rounded-[18px] font-black text-xs sm:text-sm uppercase tracking-wider bg-gradient-to-r from-amber-400 to-yellow-300 hover:from-amber-300 hover:to-yellow-200 text-black border-[2.5px] border-black shadow-[0_4px_0_0_#000] flex items-center justify-center gap-2 cursor-pointer"
             >
               <RotateCcw className="w-4 h-4" />
-              <span>PLAY AGAIN</span>
+              <span>{t('hud.rematch', 'PLAY AGAIN')}</span>
             </motion.button>
 
             <button
@@ -174,7 +176,7 @@ export default function SurvivalGameOverModal({
               }}
               className="w-full py-2 text-xs font-black text-slate-400 hover:text-white uppercase tracking-wider cursor-pointer"
             >
-              EXIT TO MAIN MENU
+              {t('btn.returnMenu', 'EXIT TO MAIN MENU')}
             </button>
           </div>
         </motion.div>

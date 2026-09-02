@@ -5,6 +5,7 @@ import { Country, getFlagUrl, getCountryByCode } from '../data/countries';
 import { getTierInfo, getRandomCountryForDivision } from '../data/divisionData';
 import { OnlineMatchRoom } from '../types';
 import { onlineMatchManager } from '../utils/onlineMatchManager';
+import { useTranslation } from '../utils/i18n';
 import LazyFlagImage from './LazyFlagImage';
 
 interface DivisionMatchmakingModalProps {
@@ -22,6 +23,7 @@ export default function DivisionMatchmakingModal({
   onClose,
   onStartOnlineMatch,
 }: DivisionMatchmakingModalProps) {
+  const { t } = useTranslation();
   const [matchState, setMatchState] = useState<'searching' | 'opponent_found'>('searching');
   const [searchSeconds, setSearchSeconds] = useState<number>(0);
   const [localDisplayCountry, setLocalDisplayCountry] = useState<Country>(userCountry);
@@ -194,14 +196,14 @@ export default function DivisionMatchmakingModal({
             <div className="flex items-center gap-2 bg-slate-800/80 border border-slate-700/60 rounded-full px-3.5 py-1.5 shadow-inner">
               <Shield className="w-3.5 h-3.5 text-amber-400" />
               <span className="text-xs font-semibold tracking-wide uppercase text-slate-200">
-                Div {divisionLevel} · {tier.name}
+                {t('divisions.divShort', 'Div')} {divisionLevel} · {tier.name}
               </span>
             </div>
 
             <button
               onClick={handleCancel}
               className="w-8 h-8 rounded-full bg-slate-800/60 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-700/50 flex items-center justify-center cursor-pointer transition-colors"
-              title="Cancel Matchmaking"
+              title={t('divisions.cancelMatchmaking', 'Cancel Matchmaking')}
             >
               <X className="w-4 h-4 stroke-[2.5]" />
             </button>
@@ -241,14 +243,14 @@ export default function DivisionMatchmakingModal({
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                   <span className="text-xs font-bold uppercase tracking-widest text-emerald-400">
-                    FINDING OPPONENT
+                    {t('divisions.findingOpponent', 'FINDING OPPONENT')}
                   </span>
                 </div>
                 <h3 className="text-base font-semibold text-white tracking-tight">
-                  Searching active players in Division {divisionLevel}
+                  {t('divisions.searchingActivePlayers', 'Searching active players in Division')} {divisionLevel}
                 </h3>
                 <p className="text-xs text-slate-400 font-normal">
-                  Matching with online players in {tier.name}
+                  {t('divisions.matchingWithOnline', 'Matching with online players in')} {tier.name}
                 </p>
 
                 <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-700/60 font-mono text-xs font-medium text-slate-300">
@@ -263,7 +265,7 @@ export default function DivisionMatchmakingModal({
                   onClick={handleCancel}
                   className="w-full py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-750 active:bg-slate-700 text-slate-300 hover:text-white font-medium text-xs tracking-wider uppercase border border-slate-700 cursor-pointer transition-all shadow-sm"
                 >
-                  CANCEL SEARCH
+                  {t('divisions.cancelSearch', 'CANCEL SEARCH')}
                 </button>
               </div>
             </div>
@@ -277,7 +279,7 @@ export default function DivisionMatchmakingModal({
                 className="flex items-center gap-2 px-3.5 py-1.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-full text-xs font-semibold tracking-wider uppercase"
               >
                 <Swords className="w-3.5 h-3.5" />
-                <span>OPPONENT CONNECTED</span>
+                <span>{t('divisions.opponentConnected', 'OPPONENT CONNECTED')}</span>
               </motion.div>
 
               {/* 1v1 Team Showdown Card */}
@@ -299,7 +301,7 @@ export default function DivisionMatchmakingModal({
                     {localDisplayCountry.name}
                   </span>
                   <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded-full bg-amber-400/10 border border-amber-400/30 text-amber-300">
-                    YOU
+                    {t('divisions.you', 'YOU')}
                   </span>
                 </motion.div>
 
@@ -324,10 +326,10 @@ export default function DivisionMatchmakingModal({
                     />
                   </div>
                   <span className="font-semibold text-xs text-white truncate max-w-[100px]">
-                    {matchedOpponent?.name || 'Opponent'}
+                    {matchedOpponent?.name || t('divisions.opponent', 'Opponent')}
                   </span>
                   <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded-full bg-emerald-400/10 border border-emerald-400/30 text-emerald-300">
-                    OPPONENT
+                    {t('divisions.opponentUpper', 'OPPONENT')}
                   </span>
                 </motion.div>
               </div>
@@ -335,7 +337,7 @@ export default function DivisionMatchmakingModal({
               {/* Countdown Banner */}
               <div className="w-full flex items-center justify-between px-5 py-3 rounded-xl bg-slate-800/80 border border-slate-700/80">
                 <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-                  Match starting in
+                  {t('divisions.matchStartingIn', 'Match starting in')}
                 </span>
                 <motion.span
                   key={countdown}

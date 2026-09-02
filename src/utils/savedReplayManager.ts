@@ -102,6 +102,21 @@ class SavedReplayManager {
       minute: '2-digit',
     });
 
+    // Clean and compress frames if needed (sample to max ~120 frames for silky smooth playback with minimal memory)
+    let processedFrames = data.frames;
+    if (processedFrames.length > 150) {
+      const step = Math.ceil(processedFrames.length / 120);
+      const sampled: ReplayFrame[] = [];
+      for (let i = 0; i < processedFrames.length; i += step) {
+        sampled.push(processedFrames[i]);
+      }
+      // Ensure the very last frame is always included
+      if (sampled[sampled.length - 1] !== processedFrames[processedFrames.length - 1]) {
+        sampled.push(processedFrames[processedFrames.length - 1]);
+      }
+      processedFrames = sampled;
+    }
+
     const newReplay: SavedReplay = {
       id: `replay_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       createdAt: Date.now(),
@@ -114,7 +129,7 @@ class SavedReplayManager {
       opponentCountryCode: data.opponentCountryCode,
       opponentCountryName: data.opponentCountryName,
       gameMode: data.gameMode || 'Free Kick',
-      frames: data.frames,
+      frames: processedFrames,
     };
 
     // Prepend new replay to front of list
@@ -122,13 +137,15 @@ class SavedReplayManager {
     this.replays = updated;
     this.notify();
 
-    // Persist via CrazyGames SDK & LocalStorage
-    try {
-      const payload = JSON.stringify(updated);
-      await crazyGamesSDK.setItem(SAVED_REPLAYS_KEY, payload);
-    } catch (err) {
-      console.error('[SavedReplayManager] Save error:', err);
-    }
+    // Persist asynchronously without blocking animation frame thread
+    setTimeout(async () => {
+      try {
+        const payload = JSON.stringify(updated);
+        await crazyGamesSDK.setItem(SAVED_REPLAYS_KEY, payload);
+      } catch (err) {
+        console.error('[SavedReplayManager] Save error:', err);
+      }
+    }, 10);
 
     return newReplay;
   }

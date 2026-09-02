@@ -2,6 +2,7 @@ import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Trophy, Star, RotateCcw, ArrowRight, X, Check } from 'lucide-react';
 import { TargetSmashStage } from '../types';
+import { useTranslation } from '../utils/i18n';
 import CoinIcon from './CoinIcon';
 
 interface TargetSmashResultsModalProps {
@@ -29,6 +30,7 @@ export default function TargetSmashResultsModal({
   onClose,
   hasNextStage,
 }: TargetSmashResultsModalProps) {
+  const { t } = useTranslation();
   if (!isOpen) return null;
 
   return (
@@ -61,10 +63,10 @@ export default function TargetSmashResultsModal({
 
           {/* Status Headline */}
           <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-wider text-white mb-0.5">
-            {isPassed ? 'STAGE CLEARED!' : 'STAGE FAILED'}
+            {isPassed ? t('targetSmash.stageCleared', 'STAGE CLEARED!') : t('targetSmash.stageFailed', 'STAGE FAILED')}
           </h2>
           <p className="text-slate-300 text-xs sm:text-sm font-bold uppercase tracking-wider mb-4">
-            Stage {stage.stageNumber}: {stage.name}
+            {t('targetSmash.stage', 'Stage')} {stage.stageNumber}: {stage.name}
           </p>
 
           {/* Stars Rating */}
@@ -84,16 +86,16 @@ export default function TargetSmashResultsModal({
           {/* Score breakdown card */}
           <div className="bg-slate-800/90 border-[2.5px] border-black rounded-[20px] p-3.5 sm:p-4 mb-5 flex flex-col gap-2 shadow-inner text-left">
             <div className="flex items-center justify-between text-xs sm:text-sm">
-              <span className="font-bold text-slate-300 uppercase">Final Score:</span>
-              <span className="font-black text-amber-400 text-base sm:text-lg">{score.toLocaleString()} PTS</span>
+              <span className="font-bold text-slate-300 uppercase">{t('targetSmash.finalScore', 'Final Score')}:</span>
+              <span className="font-black text-amber-400 text-base sm:text-lg">{score.toLocaleString()} {t('targetSmash.pts', 'PTS')}</span>
             </div>
             <div className="flex items-center justify-between text-xs sm:text-sm border-t border-slate-700/80 pt-2">
-              <span className="font-bold text-slate-300 uppercase">Target Required:</span>
-              <span className="font-black text-slate-200">{stage.targetScore.toLocaleString()} PTS</span>
+              <span className="font-bold text-slate-300 uppercase">{t('targetSmash.targetRequired', 'Target Required')}:</span>
+              <span className="font-black text-slate-200">{stage.targetScore.toLocaleString()} {t('targetSmash.pts', 'PTS')}</span>
             </div>
             {coinsEarned > 0 && (
               <div className="flex items-center justify-between text-xs sm:text-sm border-t border-slate-700/80 pt-2 text-emerald-400">
-                <span className="font-bold uppercase">Coins Reward:</span>
+                <span className="font-bold uppercase">{t('targetSmash.coinsReward', 'Coins Reward')}:</span>
                 <div className="flex items-center gap-1.5 font-black text-sm sm:text-base">
                   <CoinIcon className="w-5 h-5" />
                   <span>+{coinsEarned}</span>
@@ -111,7 +113,7 @@ export default function TargetSmashResultsModal({
                 onClick={onNextStage}
                 className="w-full py-3.5 px-5 rounded-[18px] font-black text-sm sm:text-base uppercase tracking-wider bg-gradient-to-r from-amber-400 to-yellow-300 hover:from-amber-300 hover:to-yellow-200 text-black border-[3px] border-black shadow-[0_5px_0_0_#000] flex items-center justify-center gap-2 cursor-pointer"
               >
-                <span>NEXT STAGE</span>
+                <span>{t('targetSmash.nextStage', 'NEXT STAGE')}</span>
                 <ArrowRight className="w-5 h-5 stroke-[3]" />
               </motion.button>
             )}
@@ -125,14 +127,14 @@ export default function TargetSmashResultsModal({
               }`}
             >
               <RotateCcw className="w-4 h-4" />
-              <span>RETRY STAGE</span>
+              <span>{t('targetSmash.retryStage', 'RETRY STAGE')}</span>
             </motion.button>
 
             <button
               onClick={onClose}
               className="w-full py-2 text-xs font-black text-slate-400 hover:text-white uppercase tracking-wider cursor-pointer"
             >
-              EXIT TO STAGE SELECT
+              {t('targetSmash.exitToSelect', 'EXIT TO STAGE SELECT')}
             </button>
           </div>
         </motion.div>

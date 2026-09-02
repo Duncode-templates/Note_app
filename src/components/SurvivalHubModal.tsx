@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Flame, Heart, Trophy, ArrowRight, Globe, HelpCircle, ArrowLeft, Shield } from 'lucide-react';
 import { crazyGamesSDK } from '../utils/crazyGamesSDK';
+import { useTranslation } from '../utils/i18n';
 
 interface SurvivalHubModalProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ export default function SurvivalHubModal({
   onStartSurvival,
   bestStreak,
 }: SurvivalHubModalProps) {
+  const { t } = useTranslation();
   const [view, setView] = useState<'rules' | 'mode_selection'>(() => {
     try {
       const seen = crazyGamesSDK.getItemSync('fkl_survival_guide_seen_v1');
@@ -88,17 +90,17 @@ export default function SurvivalHubModal({
               <div className="mb-4 pr-8">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider bg-amber-300 text-black px-2 py-0.5 rounded-md border border-black">
-                    SURVIVAL GUIDE
+                    {t('survival.guideBadge', 'SURVIVAL GUIDE')}
                   </span>
                   <span className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    How it works
+                    {t('survival.howItWorks', 'How it works')}
                   </span>
                 </div>
                 <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-wider text-black">
-                  SURVIVAL MODE RULES
+                  {t('survival.rulesTitle', 'SURVIVAL MODE RULES')}
                 </h2>
                 <p className="text-slate-600 text-xs sm:text-sm font-medium mt-0.5">
-                  Follow these 2 core mechanics to maximize your goal streak:
+                  {t('survival.rulesSubtitle', 'Follow these 2 core mechanics to maximize your goal streak:')}
                 </p>
               </div>
 
@@ -111,11 +113,11 @@ export default function SurvivalHubModal({
                   </div>
                   <div>
                     <div className="flex items-center gap-1.5">
-                      <span className="font-black text-sm text-black uppercase tracking-wide">3 Lives System</span>
+                      <span className="font-black text-sm text-black uppercase tracking-wide">{t('survival.rule1Title', '3 Lives System')}</span>
                       <Heart className="w-3.5 h-3.5 fill-rose-500 text-rose-500" />
                     </div>
                     <p className="text-slate-600 text-xs mt-0.5 leading-relaxed">
-                      Both you and your opponent start with 3 hearts. A missed shot or goalkeeper save deducts 1 life. First player to lose all 3 lives loses the match!
+                      {t('survival.rule1Desc', 'Both you and your opponent start with 3 hearts. A missed shot or goalkeeper save deducts 1 life. First player to lose all 3 lives loses the match!')}
                     </p>
                   </div>
                 </div>
@@ -127,11 +129,11 @@ export default function SurvivalHubModal({
                   </div>
                   <div>
                     <div className="flex items-center gap-1.5">
-                      <span className="font-black text-sm text-black uppercase tracking-wide">Turn-Based Duel &amp; 100s Timer</span>
+                      <span className="font-black text-sm text-black uppercase tracking-wide">{t('survival.rule2Title', 'Turn-Based Duel & 100s Timer')}</span>
                       <Flame className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
                     </div>
                     <p className="text-slate-600 text-xs mt-0.5 leading-relaxed">
-                      Alternate free kicks under a 100-second countdown timer. Score goals to extend your streak, outlast your rival, and claim victory!
+                      {t('survival.rule2Desc', 'Alternate free kicks under a 100-second countdown timer. Score goals to extend your streak, outlast your rival, and claim victory!')}
                     </p>
                   </div>
                 </div>
@@ -144,7 +146,7 @@ export default function SurvivalHubModal({
                 onClick={handleContinueFromRules}
                 className="w-full py-3.5 px-5 rounded-[18px] font-black text-sm sm:text-base uppercase tracking-wider bg-black hover:bg-slate-800 text-white border-[2.5px] border-black shadow-[0_4px_0_0_#475569] flex items-center justify-center gap-2 cursor-pointer outline-none"
               >
-                <span>CONTINUE</span>
+                <span>{t('common.continue', 'CONTINUE')}</span>
                 <ArrowRight className="w-5 h-5 stroke-[2.5]" />
               </motion.button>
             </div>
@@ -159,10 +161,10 @@ export default function SurvivalHubModal({
               <div className="flex items-start justify-between gap-2 mb-4 pr-8">
                 <div>
                   <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-wider text-black">
-                    SURVIVAL ARENA
+                    {t('survival.arenaTitle', 'SURVIVAL ARENA')}
                   </h2>
                   <p className="text-slate-600 text-xs sm:text-sm font-bold uppercase tracking-wider mt-0.5">
-                    Select your game mode:
+                    {t('survival.selectGameMode', 'Select your game mode:')}
                   </p>
                 </div>
 
@@ -173,7 +175,7 @@ export default function SurvivalHubModal({
                   title="View step-by-step rules"
                 >
                   <HelpCircle className="w-3.5 h-3.5 text-slate-700" />
-                  <span>Rules</span>
+                  <span>{t('survival.rulesBtn', 'Rules')}</span>
                 </button>
               </div>
 
@@ -184,9 +186,9 @@ export default function SurvivalHubModal({
                     <Trophy className="w-5 h-5 text-black" />
                   </div>
                   <div>
-                    <span className="text-[10px] font-black text-slate-500 uppercase block">Personal Record</span>
+                    <span className="text-[10px] font-black text-slate-500 uppercase block">{t('survival.personalRecord', 'Personal Record')}</span>
                     <span className="text-base font-black text-black uppercase">
-                      {bestStreak} {bestStreak === 1 ? 'GOAL' : 'GOALS'} STREAK
+                      {bestStreak} {bestStreak === 1 ? t('survival.goalStreak', 'GOAL STREAK') : t('survival.goalsStreak', 'GOALS STREAK')}
                     </span>
                   </div>
                 </div>
@@ -210,7 +212,7 @@ export default function SurvivalHubModal({
                     <div className="w-10 h-10 rounded-xl bg-black/10 flex items-center justify-center border border-black/20 shrink-0">
                       <Globe className="w-5 h-5 text-black stroke-[2.5]" />
                     </div>
-                    <span className="text-base sm:text-lg font-black text-black">ONLINE 1V1 SURVIVAL</span>
+                    <span className="text-base sm:text-lg font-black text-black">{t('survival.onlineDuelBtn', 'ONLINE 1V1 SURVIVAL')}</span>
                   </div>
                   <ArrowRight className="w-5 h-5 text-black stroke-[3] group-hover:translate-x-1 transition-transform shrink-0" />
                 </motion.button>
@@ -226,7 +228,7 @@ export default function SurvivalHubModal({
                     <div className="w-10 h-10 rounded-xl bg-black/20 flex items-center justify-center border border-black/30 shrink-0">
                       <Flame className="w-5 h-5 fill-white text-white stroke-[2.5]" />
                     </div>
-                    <span className="text-base sm:text-lg font-black text-white">OFFLINE SURVIVAL</span>
+                    <span className="text-base sm:text-lg font-black text-white">{t('survival.offlineSurvivalBtn', 'OFFLINE SURVIVAL')}</span>
                   </div>
                   <ArrowRight className="w-5 h-5 text-white stroke-[3] group-hover:translate-x-1 transition-transform shrink-0" />
                 </motion.button>
@@ -239,7 +241,7 @@ export default function SurvivalHubModal({
                   className="text-xs font-bold text-slate-600 hover:text-black flex items-center gap-1 cursor-pointer transition-colors"
                 >
                   <ArrowLeft className="w-3.5 h-3.5" />
-                  <span>Back to Rules &amp; Guide</span>
+                  <span>{t('survival.backToRules', 'Back to Rules & Guide')}</span>
                 </button>
               </div>
             </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Play, ShoppingCart, X, Target, Coins, User, Flame, Zap, Swords, Wifi, Video, Bookmark } from 'lucide-react';
+import { Play, ShoppingCart, X, Target, Coins, User, Flame, Zap, Swords, Wifi, Video, Bookmark, Globe } from 'lucide-react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faFutbol, faBullseye, faDumbbell, faFire, faCrosshairs } from '@fortawesome/free-solid-svg-icons';
 import { MenuItemId, GameMode, OnlineMatchRoom, SavedReplay } from './types';
@@ -10,6 +10,7 @@ import TournamentTeamSelectionPage from './components/TournamentTeamSelectionPag
 import TournamentHubPage from './components/TournamentHubPage';
 import StorePage from './components/StorePage';
 import SavedReplaysPage from './components/SavedReplaysPage';
+import LanguageSelectionPage from './components/LanguageSelectionPage';
 import Stadium3DView from './components/Stadium3DView';
 import OnlineMatchModal from './components/OnlineMatchModal';
 import SurvivalHubModal from './components/SurvivalHubModal';
@@ -36,9 +37,10 @@ import { initAudioUnlockListener, preloadAudioBuffer, preloadImage } from './uti
 import { onlineMatchManager } from './utils/onlineMatchManager';
 import { savedReplayManager } from './utils/savedReplayManager';
 import { crazyGamesSDK } from './utils/crazyGamesSDK';
+import { useTranslation, SUPPORTED_LANGUAGES } from './utils/i18n';
 
 type ModalType = 'quick_play' | 'tournament' | 'practice' | null;
-type ViewState = 'menu' | 'country_selection' | 'online_country_selection' | 'tournament_selection' | 'tournament_hub' | 'stadium' | 'store' | 'saved_replays';
+type ViewState = 'menu' | 'country_selection' | 'online_country_selection' | 'tournament_selection' | 'tournament_hub' | 'stadium' | 'store' | 'saved_replays' | 'language_selection';
 
 const COINS_DATA_KEY = 'crazygames_user_coins';
 const UNLOCKED_BALLS_KEY = 'fkl_unlocked_balls_v1';
@@ -118,6 +120,7 @@ function loadInitialSurvivalBest(): number {
 }
 
 export default function App() {
+  const { t, language } = useTranslation();
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [activeModal, setActiveModal] = useState<ModalType>(null);
   const [isOnlineModalOpen, setIsOnlineModalOpen] = useState(false);
@@ -657,6 +660,14 @@ export default function App() {
     );
   }
 
+  if (currentView === 'language_selection') {
+    return (
+      <LanguageSelectionPage
+        onBack={() => setCurrentView('menu')}
+      />
+    );
+  }
+
   return (
     <div className="fixed inset-0 w-full h-full h-[100dvh] max-h-[100dvh] bg-gradient-to-b from-sky-400 via-blue-500 to-indigo-700 text-slate-900 flex flex-col items-center justify-center p-3 sm:p-6 select-none font-sans overflow-y-auto">
       
@@ -692,12 +703,36 @@ export default function App() {
             });
           }}
           className="bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-400 hover:from-amber-300 hover:to-yellow-200 border-[3px] md:border-[4px] lg:border-[4.5px] border-black shadow-[0_5px_0_0_#000] md:shadow-[0_7px_0_0_#000] lg:shadow-[0_9px_0_0_#000] rounded-full px-3 sm:px-4 md:px-5 lg:px-6 py-1.5 sm:py-2 md:py-2.5 lg:py-3.5 flex items-center gap-1.5 sm:gap-2 cursor-pointer select-none outline-none"
-          title="Watch video ad for +50 free coins"
+          title={t('common.watchAdCoins', 'Watch video ad for +50 free coins')}
         >
           <Video className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 text-black fill-black shrink-0" />
           <span className="font-black text-xs sm:text-sm md:text-base lg:text-lg text-black uppercase tracking-wider whitespace-nowrap">
-            +50 COINS
+            +50 {t('common.coins', 'COINS')}
           </span>
+        </motion.button>
+      </motion.div>
+
+      {/* Top Right Language Selector Button */}
+      <motion.div
+        initial={{ opacity: 0, x: 30 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.4, ease: 'easeOut' }}
+        className="fixed top-4 right-4 sm:top-6 sm:right-6 md:top-8 md:right-8 lg:top-10 lg:right-10 z-20 flex items-center gap-2"
+      >
+        <motion.button
+          whileHover={{ scale: 1.05, y: -2 }}
+          whileTap={{ scale: 0.95, y: 1 }}
+          onClick={() => setCurrentView('language_selection')}
+          className="bg-white/95 hover:bg-white backdrop-blur-md border-[3px] md:border-[3.5px] border-black shadow-[0_5px_0_0_#000] md:shadow-[0_7px_0_0_#000] rounded-full px-3 sm:px-4 py-1.5 sm:py-2 flex items-center gap-2 cursor-pointer select-none outline-none transition-colors"
+          title={t('nav.language', 'Language')}
+        >
+          <span className="text-lg leading-none">
+            {SUPPORTED_LANGUAGES.find((l) => l.code === language)?.flag || '🌐'}
+          </span>
+          <span className="text-xs sm:text-sm font-black text-black uppercase tracking-wider">
+            {SUPPORTED_LANGUAGES.find((l) => l.code === language)?.code.toUpperCase() || 'EN'}
+          </span>
+          <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-700" />
         </motion.button>
       </motion.div>
 
@@ -711,7 +746,7 @@ export default function App() {
           className="text-center mb-3 sm:mb-6 md:mb-8"
         >
           <h1 className="text-3xl sm:text-5xl md:text-6xl lg:text-7xl font-black uppercase tracking-wider text-transparent bg-clip-text bg-gradient-to-b from-yellow-200 via-amber-300 to-amber-500 drop-shadow-[0_4px_0_#78350f] sm:drop-shadow-[0_6px_0_#78350f] [text-shadow:0_1px_0_#fef08a,0_2px_0_#f59e0b,0_3px_0_#d97706,0_4px_0_#b45309,0_5px_0_#78350f,0_8px_16px_rgba(0,0,0,0.7)] select-none">
-            FREE KICK LEGENDS
+            {t('game.title', 'FREE KICK LEGENDS')}
           </h1>
         </motion.div>
 
@@ -754,10 +789,10 @@ export default function App() {
               </div>
               <div className="flex flex-col">
                 <span className="text-lg sm:text-xl md:text-2xl font-black text-black uppercase tracking-wider">
-                  QUICK PLAY
+                  {t('menu.quickPlay', 'QUICK PLAY')}
                 </span>
                 <span className="text-[11px] sm:text-xs md:text-sm font-bold text-slate-700 uppercase tracking-wider">
-                  ONLINE &amp; OFFLINE MATCHES
+                  {t('menu.quickPlaySub', 'ONLINE & OFFLINE MATCHES')}
                 </span>
               </div>
             </div>
@@ -765,10 +800,10 @@ export default function App() {
             {/* Small Network Online Icon on the right (shifted downwards) */}
             <div
               className="flex items-center gap-1 bg-slate-100 text-slate-800 border-[1.5px] border-black rounded-full px-2 sm:px-2.5 py-1 text-[9px] sm:text-[10px] font-black uppercase tracking-wider shadow-2xs shrink-0 translate-y-1.5 sm:translate-y-2 mt-auto"
-              title="Online Multiplayer Available"
+              title={t('menu.onlineMultiplayer', 'Online Multiplayer Available')}
             >
               <Wifi className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600 stroke-[2.5]" />
-              <span className="hidden xs:inline">ONLINE</span>
+              <span className="hidden xs:inline">{t('common.online', 'ONLINE')}</span>
             </div>
           </motion.button>
 
@@ -795,14 +830,14 @@ export default function App() {
               <div className="flex flex-col">
                 <div className="flex items-center gap-2">
                   <span className="text-lg sm:text-xl md:text-2xl font-black text-black uppercase tracking-wider">
-                    SURVIVAL MODE
+                    {t('menu.survivalMode', 'SURVIVAL MODE')}
                   </span>
                   <span className="bg-black text-amber-300 font-black text-[9px] sm:text-[10px] px-2 py-0.5 rounded-full border border-black uppercase tracking-wider">
-                    3 LIVES
+                    {t('survival.threeLives', '3 LIVES')}
                   </span>
                 </div>
                 <span className="text-[11px] sm:text-xs md:text-sm font-bold text-rose-950 uppercase tracking-wider">
-                  Endless Streak • Best: {bestSurvivalStreak} 🔥
+                  {t('survival.endlessStreak', 'Endless Streak')} • {t('survival.best', 'Best')}: {bestSurvivalStreak} 🔥
                 </span>
               </div>
             </div>
@@ -811,13 +846,13 @@ export default function App() {
             <div className="flex items-center gap-1.5 shrink-0 translate-y-1.5 sm:translate-y-2 mt-auto">
               <div
                 className="flex items-center gap-1 bg-emerald-500 text-white border-[1.5px] border-black rounded-full px-2 sm:px-2.5 py-1 text-[9px] sm:text-[10px] font-black uppercase tracking-wider shadow-2xs"
-                title="Online 1v1 Survival Available"
+                title={t('survival.onlineAvailable', 'Online 1v1 Survival Available')}
               >
                 <Wifi className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-white stroke-[2.5]" />
-                <span className="hidden xs:inline">ONLINE</span>
+                <span className="hidden xs:inline">{t('common.online', 'ONLINE')}</span>
               </div>
               <div className="hidden xs:flex items-center gap-1 bg-white/90 px-2.5 py-1 rounded-full border-[2px] border-black font-black text-xs text-black uppercase">
-                <span>🔥 STREAK</span>
+                <span>🔥 {t('survival.streak', 'STREAK')}</span>
               </div>
             </div>
           </motion.button>
@@ -844,10 +879,10 @@ export default function App() {
               </div>
               <div className="flex flex-col">
                 <span className="text-lg sm:text-xl md:text-2xl font-black text-black uppercase tracking-wider">
-                  COIN WAGER ARENA
+                  {t('menu.wagerArena', 'COIN WAGER ARENA')}
                 </span>
                 <span className="text-[11px] sm:text-xs md:text-sm font-bold text-amber-950 uppercase tracking-wider">
-                  Bet Coins • Winner Takes Entire Pot
+                  {t('wager.betCoinsPot', 'Bet Coins • Winner Takes Entire Pot')}
                 </span>
               </div>
             </div>
@@ -856,14 +891,14 @@ export default function App() {
             <div className="flex items-center gap-1.5 shrink-0 translate-y-1.5 sm:translate-y-2 mt-auto">
               <div
                 className="flex items-center gap-1 bg-black text-emerald-400 border-[1.5px] border-black rounded-full px-2 sm:px-2.5 py-1 text-[9px] sm:text-[10px] font-black uppercase tracking-wider shadow-2xs"
-                title="Online 1v1 Coin Wager Match"
+                title={t('wager.onlineDuel', 'Online 1v1 Coin Wager Match')}
               >
                 <Wifi className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400 stroke-[2.5]" />
-                <span className="hidden xs:inline">ONLINE</span>
+                <span className="hidden xs:inline">{t('common.online', 'ONLINE')}</span>
               </div>
               <div className="hidden xs:flex items-center gap-1.5 bg-black text-amber-300 px-3 py-1.5 rounded-full border-[2px] border-black font-black text-xs uppercase shadow-xs">
                 <Coins className="w-3.5 h-3.5 text-amber-300" />
-                <span>DUEL</span>
+                <span>{t('wager.duel', 'DUEL')}</span>
               </div>
             </div>
           </motion.button>
@@ -890,10 +925,10 @@ export default function App() {
               </div>
               <div className="flex flex-col">
                 <span className="text-lg sm:text-xl md:text-2xl font-black text-black uppercase tracking-wider">
-                  FIFA WORLD CUP
+                  {t('menu.worldCup', 'FIFA WORLD CUP')}
                 </span>
                 <span className="text-[11px] sm:text-xs md:text-sm font-bold text-slate-700 uppercase tracking-wider">
-                  Tournament Format
+                  {t('menu.tournamentFormat', 'Tournament Format')}
                 </span>
               </div>
             </div>
@@ -921,10 +956,10 @@ export default function App() {
               </div>
               <div className="flex flex-col">
                 <span className="text-lg sm:text-xl md:text-2xl font-black text-black uppercase tracking-wider">
-                  PRACTICE
+                  {t('menu.practice', 'PRACTICE')}
                 </span>
                 <span className="text-[11px] sm:text-xs md:text-sm font-bold text-slate-700 uppercase tracking-wider">
-                  Free Kick Training
+                  {t('menu.practiceSub', 'Free Kick Training')}
                 </span>
               </div>
             </div>
@@ -975,7 +1010,7 @@ export default function App() {
               {playerName}
             </span>
             <span className="text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wider text-slate-500 group-hover:text-amber-600 transition-colors">
-              SAVED REPLAYS &amp; STATS →
+              {t('profile.savedReplaysStats', 'SAVED REPLAYS & STATS')} →
             </span>
           </div>
 
@@ -983,7 +1018,7 @@ export default function App() {
           {savedReplaysCount > 0 && (
             <div
               className="ml-auto flex items-center gap-1 bg-rose-600 hover:bg-rose-500 text-white rounded-full px-2 py-0.5 border-[1.5px] border-black shadow-xs shrink-0"
-              title={`${savedReplaysCount} Saved Replay${savedReplaysCount > 1 ? 's' : ''}`}
+              title={`${savedReplaysCount} ${t('replays.title', 'Saved Replays')}`}
             >
               <Video className="w-3 h-3 fill-white text-white" />
               <span className="text-[10px] font-black tracking-tight">{savedReplaysCount}</span>
@@ -1004,7 +1039,7 @@ export default function App() {
       >
         <ShoppingCart className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 text-yellow-300 shrink-0" />
         <span className="text-xs sm:text-base md:text-xl font-black uppercase tracking-wider">
-          SHOP
+          {t('menu.shop', 'SHOP')}
         </span>
       </motion.button>
 
@@ -1032,10 +1067,10 @@ export default function App() {
                 <X className="w-5 h-5" />
               </button>
               <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-wider text-black mb-1">
-                QUICK PLAY
+                {t('menu.quickPlay', 'QUICK PLAY')}
               </h2>
               <p className="text-slate-600 text-xs sm:text-sm mb-6 font-bold uppercase tracking-wider">
-                Select match mode:
+                {t('quickPlay.selectMode', 'Select match mode:')}
               </p>
 
               <div className="flex flex-col gap-3.5">
@@ -1046,8 +1081,10 @@ export default function App() {
                   onClick={() => handleChooseMode('Quick Play', 'Online')}
                   className="w-full py-3.5 sm:py-4 px-5 rounded-[18px] font-black text-base sm:text-lg uppercase tracking-wider bg-amber-400 text-black border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer flex items-center justify-between outline-none focus:outline-none"
                 >
-                  <span>ONLINE</span>
-                  <span className="text-[10px] sm:text-xs bg-black text-white px-2.5 py-1 rounded-full font-black uppercase tracking-wider">Ranked</span>
+                  <span>{t('common.online', 'ONLINE')}</span>
+                  <span className="text-[10px] sm:text-xs bg-black text-white px-2.5 py-1 rounded-full font-black uppercase tracking-wider">
+                    {t('quickPlay.ranked', 'Ranked')}
+                  </span>
                 </motion.button>
 
                 <motion.button
@@ -1057,8 +1094,10 @@ export default function App() {
                   onClick={() => handleChooseMode('Quick Play', 'Offline')}
                   className="w-full py-3.5 sm:py-4 px-5 rounded-[18px] font-black text-base sm:text-lg uppercase tracking-wider bg-sky-400 text-black border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer flex items-center justify-between outline-none focus:outline-none"
                 >
-                  <span>OFFLINE</span>
-                  <span className="text-[10px] sm:text-xs bg-black text-white px-2.5 py-1 rounded-full font-black uppercase tracking-wider">Vs AI / Local</span>
+                  <span>{t('common.offline', 'OFFLINE')}</span>
+                  <span className="text-[10px] sm:text-xs bg-black text-white px-2.5 py-1 rounded-full font-black uppercase tracking-wider">
+                    {t('quickPlay.vsAi', 'Vs AI / Local')}
+                  </span>
                 </motion.button>
               </div>
             </motion.div>
@@ -1090,10 +1129,10 @@ export default function App() {
                 <X className="w-5 h-5" />
               </button>
               <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-wider text-black mb-1">
-                FIFA WORLD CUP
+                {t('menu.worldCup', 'FIFA WORLD CUP')}
               </h2>
               <p className="text-slate-600 text-xs sm:text-sm mb-6 font-bold uppercase tracking-wider">
-                Select game format:
+                {t('tournament.selectFormat', 'Select game format:')}
               </p>
 
               <div className="flex flex-col gap-3.5">
@@ -1107,8 +1146,10 @@ export default function App() {
                   }}
                   className="w-full py-3.5 sm:py-4 px-5 rounded-[18px] font-black text-base sm:text-lg uppercase tracking-wider bg-amber-400 text-black border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer flex items-center justify-between outline-none focus:outline-none"
                 >
-                  <span>ONLINE</span>
-                  <span className="text-[10px] sm:text-xs bg-black text-white px-2.5 py-1 rounded-full font-black uppercase tracking-wider">Global Cup</span>
+                  <span>{t('common.online', 'ONLINE')}</span>
+                  <span className="text-[10px] sm:text-xs bg-black text-white px-2.5 py-1 rounded-full font-black uppercase tracking-wider">
+                    {t('tournament.globalCup', 'Global Cup')}
+                  </span>
                 </motion.button>
 
                 <motion.button
@@ -1118,8 +1159,10 @@ export default function App() {
                   onClick={() => handleChooseMode('Tournament', 'Offline')}
                   className="w-full py-3.5 sm:py-4 px-5 rounded-[18px] font-black text-base sm:text-lg uppercase tracking-wider bg-sky-400 text-black border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer flex items-center justify-between outline-none focus:outline-none"
                 >
-                  <span>OFFLINE</span>
-                  <span className="text-[10px] sm:text-xs bg-black text-white px-2.5 py-1 rounded-full font-black uppercase tracking-wider">Custom Cup</span>
+                  <span>{t('common.offline', 'OFFLINE')}</span>
+                  <span className="text-[10px] sm:text-xs bg-black text-white px-2.5 py-1 rounded-full font-black uppercase tracking-wider">
+                    {t('tournament.customCup', 'Custom Cup')}
+                  </span>
                 </motion.button>
               </div>
             </motion.div>
@@ -1151,10 +1194,10 @@ export default function App() {
                 <X className="w-5 h-5" />
               </button>
               <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-wider text-black mb-1">
-                PRACTICE
+                {t('menu.practice', 'PRACTICE')}
               </h2>
               <p className="text-slate-600 text-xs sm:text-sm mb-6 font-bold uppercase tracking-wider">
-                Select practice training drill:
+                {t('practice.selectDrill', 'Select practice training drill:')}
               </p>
 
               <div className="flex flex-col gap-3.5">
@@ -1168,11 +1211,15 @@ export default function App() {
                   <div className="flex items-center gap-3">
                     <FontAwesomeIcon icon={faFutbol} className="text-xl text-black" />
                     <div className="flex flex-col text-left">
-                      <span>FREE KICK</span>
-                      <span className="text-[10px] sm:text-xs font-bold text-slate-800 normal-case">Instant Play • Wall defense &amp; angle drills</span>
+                      <span>{t('practice.freeKick', 'FREE KICK')}</span>
+                      <span className="text-[10px] sm:text-xs font-bold text-slate-800 normal-case">
+                        {t('practice.freeKickSub', 'Instant Play • Wall defense & angle drills')}
+                      </span>
                     </div>
                   </div>
-                  <span className="text-[10px] sm:text-xs bg-black text-white px-2.5 py-1 rounded-full font-black uppercase tracking-wider">Instant</span>
+                  <span className="text-[10px] sm:text-xs bg-black text-white px-2.5 py-1 rounded-full font-black uppercase tracking-wider">
+                    {t('practice.instant', 'Instant')}
+                  </span>
                 </motion.button>
 
                 <motion.button
@@ -1185,11 +1232,15 @@ export default function App() {
                   <div className="flex items-center gap-3">
                     <Target className="w-5 h-5 text-black" />
                     <div className="flex flex-col text-left">
-                      <span>PENALTY</span>
-                      <span className="text-[10px] sm:text-xs font-bold text-slate-800 normal-case">1v1 vs GK • Untimed</span>
+                      <span>{t('practice.penalty', 'PENALTY')}</span>
+                      <span className="text-[10px] sm:text-xs font-bold text-slate-800 normal-case">
+                        {t('practice.penaltySub', '1v1 vs GK • Untimed')}
+                      </span>
                     </div>
                   </div>
-                  <span className="text-[10px] sm:text-xs bg-black text-white px-2.5 py-1 rounded-full font-black uppercase tracking-wider">Random</span>
+                  <span className="text-[10px] sm:text-xs bg-black text-white px-2.5 py-1 rounded-full font-black uppercase tracking-wider">
+                    {t('practice.random', 'Random')}
+                  </span>
                 </motion.button>
               </div>
             </motion.div>
@@ -1207,17 +1258,17 @@ export default function App() {
         prizePot={onlineModalWagerTier?.prizePot}
         title={
           onlineModalWagerTier
-            ? `${onlineModalWagerTier.name} Arena`
+            ? `${onlineModalWagerTier.name} ${t('wager.arena', 'Arena')}`
             : onlineModalGameMode === 'survival'
-            ? 'ONLINE SURVIVAL 1V1'
-            : 'ONLINE MATCH'
+            ? t('survival.onlineSurvivalTitle', 'ONLINE SURVIVAL 1V1')
+            : t('online.matchTitle', 'ONLINE MATCH')
         }
         subtitle={
           onlineModalWagerTier
-            ? `Bet ${onlineModalWagerTier.entryFee.toLocaleString()} Coins • Winner Takes ${onlineModalWagerTier.prizePot.toLocaleString()} Coins Prize Pot!`
+            ? `${t('wager.bet', 'Bet')} ${onlineModalWagerTier.entryFee.toLocaleString()} ${t('common.coins', 'Coins')} • ${t('wager.winnerTakes', 'Winner Takes')} ${onlineModalWagerTier.prizePot.toLocaleString()} ${t('common.coins', 'Coins')} ${t('wager.prizePot', 'Prize Pot!')}`
             : onlineModalGameMode === 'survival'
-            ? '3 Lives • Live 1v1 Survival Duel • Endless Streak Challenge'
-            : 'Connect and pick your country together in real-time:'
+            ? t('survival.onlineSurvivalSubtitle', '3 Lives • Live 1v1 Survival Duel • Endless Streak Challenge')
+            : t('online.matchSubtitle', 'Connect and pick your country together in real-time:')
         }
         onClose={() => {
           setIsOnlineModalOpen(false);
@@ -1259,15 +1310,15 @@ export default function App() {
 
               {/* Coming Soon Badge */}
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-amber-400 to-yellow-300 border-[2px] border-black shadow-[0_2px_0_0_#000] text-black font-black text-xs uppercase tracking-wider mb-2">
-                <span>🚀 IN DEVELOPMENT</span>
+                <span>🚀 {t('tournament.inDevelopment', 'IN DEVELOPMENT')}</span>
               </div>
 
               {/* Title & Tagline */}
               <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-wider text-black mb-1.5">
-                ONLINE FIFA WORLD CUP
+                {t('tournament.onlineWorldCup', 'ONLINE FIFA WORLD CUP')}
               </h2>
               <p className="text-slate-600 text-xs sm:text-sm font-bold uppercase tracking-wider mb-5">
-                Multiplayer World Cups &amp; Knockout Brackets
+                {t('tournament.multiplayerWorldCup', 'Multiplayer World Cups & Knockout Brackets')}
               </p>
 
               {/* Feature Preview Cards */}
@@ -1275,24 +1326,36 @@ export default function App() {
                 <div className="flex items-center gap-2.5">
                   <span className="text-base">🏆</span>
                   <div className="flex flex-col">
-                    <span className="text-xs font-black text-black uppercase">16-Player Knockout Brackets</span>
-                    <span className="text-[10px] font-bold text-slate-500 uppercase">Real-time elimination cups with live brackets</span>
+                    <span className="text-xs font-black text-black uppercase">
+                      {t('tournament.knockoutBrackets', '16-Player Knockout Brackets')}
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase">
+                      {t('tournament.knockoutBracketsSub', 'Real-time elimination cups with live brackets')}
+                    </span>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2.5 border-t border-slate-200 pt-2">
                   <span className="text-base">🌍</span>
                   <div className="flex flex-col">
-                    <span className="text-xs font-black text-black uppercase">Global Season Leaderboards</span>
-                    <span className="text-[10px] font-bold text-slate-500 uppercase">Earn ranking points &amp; trophy badges</span>
+                    <span className="text-xs font-black text-black uppercase">
+                      {t('tournament.globalLeaderboards', 'Global Season Leaderboards')}
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase">
+                      {t('tournament.globalLeaderboardsSub', 'Earn ranking points & trophy badges')}
+                    </span>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2.5 border-t border-slate-200 pt-2">
                   <span className="text-base">🥇</span>
                   <div className="flex flex-col">
-                    <span className="text-xs font-black text-black uppercase">Exclusive Champion Kits &amp; Balls</span>
-                    <span className="text-[10px] font-bold text-slate-500 uppercase">Special custom unlockables for tournament winners</span>
+                    <span className="text-xs font-black text-black uppercase">
+                      {t('tournament.exclusiveUnlockables', 'Exclusive Champion Kits & Balls')}
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase">
+                      {t('tournament.exclusiveUnlockablesSub', 'Special custom unlockables for tournament winners')}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -1309,7 +1372,7 @@ export default function App() {
                   }}
                   className="w-full py-3.5 px-5 rounded-[18px] font-black text-sm uppercase tracking-wider bg-gradient-to-r from-emerald-400 to-green-400 text-black border-[3px] border-black shadow-[0_4px_0_0_#000] cursor-pointer flex items-center justify-center gap-2 outline-none"
                 >
-                  <span>PLAY OFFLINE WORLD CUP NOW</span>
+                  <span>{t('tournament.playOfflineNow', 'PLAY OFFLINE WORLD CUP NOW')}</span>
                   <span className="text-base">→</span>
                 </motion.button>
 
@@ -1319,7 +1382,7 @@ export default function App() {
                   onClick={() => setIsTournamentComingSoonOpen(false)}
                   className="w-full py-2.5 rounded-[16px] font-black text-xs uppercase tracking-wider bg-slate-100 hover:bg-slate-200 text-slate-800 border-[2px] border-black cursor-pointer"
                 >
-                  CLOSE
+                  {t('common.close', 'CLOSE')}
                 </motion.button>
               </div>
             </motion.div>
@@ -1363,15 +1426,15 @@ export default function App() {
               {/* Coming Soon / Info Badge */}
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-amber-400 to-yellow-300 border-[2px] border-black shadow-[0_2px_0_0_#000] text-black font-black text-xs uppercase tracking-wider mb-2">
                 <Video className="w-3.5 h-3.5 fill-black text-black" />
-                <span>VIDEO REWARD</span>
+                <span>{t('ads.videoReward', 'VIDEO REWARD')}</span>
               </div>
 
               {/* Title & Tagline */}
               <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-wider text-black mb-1.5">
-                +50 COINS REWARD
+                +50 {t('ads.coinsReward', 'COINS REWARD')}
               </h2>
               <p className="text-slate-600 text-xs sm:text-sm font-bold uppercase tracking-wider mb-5">
-                Watch video ads to earn +50 free coins
+                {t('ads.watchToEarn', 'Watch video ads to earn +50 free coins')}
               </p>
 
               {/* Info Box */}
@@ -1381,14 +1444,14 @@ export default function App() {
                     +50
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-xs font-black text-black uppercase">Instant Coin Boost</span>
+                    <span className="text-xs font-black text-black uppercase">{t('ads.instantBoost', 'Instant Coin Boost')}</span>
                     <span className="text-[10px] font-bold text-slate-500 uppercase">
-                      Rewarded ads integration is currently being finalized.
+                      {t('ads.integrationFinalizing', 'Rewarded ads integration is currently being finalized.')}
                     </span>
                   </div>
                 </div>
                 <div className="border-t border-slate-200 pt-2 text-[11px] font-bold text-slate-600 text-center">
-                  Unlock all 50 ball textures and 50 stadium pitch patterns with coin rewards!
+                  {t('ads.unlockAllItems', 'Unlock all 50 ball textures and 50 stadium pitch patterns with coin rewards!')}
                 </div>
               </div>
 
@@ -1399,7 +1462,7 @@ export default function App() {
                 onClick={() => setIsAdsComingSoonOpen(false)}
                 className="w-full py-3.5 px-5 rounded-[18px] font-black text-sm uppercase tracking-wider bg-amber-400 hover:bg-amber-300 text-black border-[3px] border-black shadow-[0_4px_0_0_#000] cursor-pointer outline-none"
               >
-                GOT IT
+                {t('common.gotIt', 'GOT IT')}
               </motion.button>
             </motion.div>
           </motion.div>

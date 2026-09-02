@@ -12,6 +12,7 @@ import StoreDropdown, { StoreTab } from './StoreDropdown';
 import Ball3DThumbnail from './Ball3DThumbnail';
 import PitchPatternThumbnail from './PitchPatternThumbnail';
 import crazyGamesSDK from '../utils/crazyGamesSDK';
+import { useTranslation } from '../utils/i18n';
 
 interface StorePageProps {
   coins: number;
@@ -39,6 +40,7 @@ export default function StorePage({
   onUnlockPitch,
   onEquipPitch,
 }: StorePageProps) {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<StoreTab>('balls');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -55,15 +57,15 @@ export default function StorePage({
     const isUnlocked = unlockedBallIds.includes(ball.id);
     if (isUnlocked) {
       onEquipBall(ball.id);
-      showToast(`EQUIPPED: ${ball.name.toUpperCase()}`);
+      showToast(`${t('btn.equipped', 'EQUIPPED')}: ${ball.name.toUpperCase()}`);
     } else {
       if (coins >= ball.price) {
         onUnlockBall(ball.id, ball.price);
         onEquipBall(ball.id);
         crazyGamesSDK.happytime();
-        showToast(`UNLOCKED & EQUIPPED: ${ball.name.toUpperCase()}`);
+        showToast(`${t('store.unlockedAndEquipped', 'UNLOCKED & EQUIPPED')}: ${ball.name.toUpperCase()}`);
       } else {
-        showToast(`NOT ENOUGH COINS! NEED ${ball.price - coins} MORE`);
+        showToast(`${t('store.notEnoughCoins', 'NOT ENOUGH COINS!')} ${t('store.needMore', 'NEED')} ${ball.price - coins} ${t('store.more', 'MORE')}`);
       }
     }
   };
@@ -72,15 +74,15 @@ export default function StorePage({
     const isUnlocked = unlockedPitchIds.includes(pitch.id);
     if (isUnlocked) {
       onEquipPitch(pitch.id);
-      showToast(`EQUIPPED: ${pitch.name.toUpperCase()}`);
+      showToast(`${t('btn.equipped', 'EQUIPPED')}: ${pitch.name.toUpperCase()}`);
     } else {
       if (coins >= pitch.price) {
         onUnlockPitch(pitch.id, pitch.price);
         onEquipPitch(pitch.id);
         crazyGamesSDK.happytime();
-        showToast(`UNLOCKED & EQUIPPED: ${pitch.name.toUpperCase()}`);
+        showToast(`${t('store.unlockedAndEquipped', 'UNLOCKED & EQUIPPED')}: ${pitch.name.toUpperCase()}`);
       } else {
-        showToast(`NOT ENOUGH COINS! NEED ${pitch.price - coins} MORE`);
+        showToast(`${t('store.notEnoughCoins', 'NOT ENOUGH COINS!')} ${t('store.needMore', 'NEED')} ${pitch.price - coins} ${t('store.more', 'MORE')}`);
       }
     }
   };
@@ -99,13 +101,13 @@ export default function StorePage({
               className="bg-white border-[3.5px] border-black shadow-[0_5px_0_0_#000] px-4 sm:px-6 py-2 sm:py-2.5 rounded-[18px] font-black uppercase text-sm sm:text-base flex items-center gap-2 cursor-pointer outline-none select-none"
             >
               <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5 stroke-[3]" />
-              <span>BACK</span>
+              <span>{t('common.back', 'BACK')}</span>
             </motion.button>
 
             {/* On mobile: Store Title inline */}
             <div className="md:hidden text-right">
               <h1 className="text-2xl font-black uppercase tracking-wider text-amber-300 drop-shadow-[0_2px_0_#78350f]">
-                STORE
+                {t('menu.shop', 'STORE')}
               </h1>
             </div>
           </div>
@@ -113,10 +115,10 @@ export default function StorePage({
           {/* Center: Store Title (Desktop/Tablet) */}
           <div className="hidden md:block text-center">
             <h1 className="text-3xl sm:text-4xl md:text-5xl font-black uppercase tracking-wider text-transparent bg-clip-text bg-gradient-to-b from-yellow-200 via-amber-300 to-amber-500 drop-shadow-[0_4px_0_#78350f] [text-shadow:0_1px_0_#fef08a,0_2px_0_#f59e0b,0_3px_0_#d97706,0_4px_0_#b45309,0_5px_0_#78350f,0_6px_12px_rgba(0,0,0,0.6)]">
-              STORE
+              {t('menu.shop', 'STORE')}
             </h1>
             <p className="text-xs sm:text-sm font-black text-amber-200 uppercase tracking-widest drop-shadow-[0_2px_0_#000]">
-              3D BALL TEXTURES &amp; PITCH PATTERNS
+              {t('store.subtitle', '3D BALL TEXTURES & PITCH PATTERNS')}
             </p>
           </div>
 
@@ -169,7 +171,7 @@ export default function StorePage({
                         {isEquipped && (
                           <span className="text-[9px] sm:text-[11px] font-black uppercase tracking-wider px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full border-[1.5px] sm:border-[2px] border-black bg-emerald-400 text-black flex items-center gap-1">
                             <Check className="w-3 h-3 stroke-[3]" />
-                            ACTIVE
+                            {t('common.active', 'ACTIVE')}
                           </span>
                         )}
                       </div>
@@ -191,7 +193,7 @@ export default function StorePage({
                             disabled
                             className="w-full py-1.5 sm:py-2.5 rounded-[12px] sm:rounded-[16px] font-black text-[10px] sm:text-xs md:text-sm uppercase tracking-wider bg-slate-200 text-slate-700 border-[2px] sm:border-[2.5px] border-black cursor-default"
                           >
-                            EQUIPPED
+                            {t('btn.equipped', 'EQUIPPED')}
                           </button>
                         ) : isUnlocked ? (
                           <motion.button
@@ -200,7 +202,7 @@ export default function StorePage({
                             onClick={() => handleBuyOrEquipBall(ball)}
                             className="w-full py-1.5 sm:py-2.5 rounded-[12px] sm:rounded-[16px] font-black text-[10px] sm:text-xs md:text-sm uppercase tracking-wider bg-emerald-400 text-black border-[2px] sm:border-[2.5px] border-black shadow-[0_3px_0_0_#000] sm:shadow-[0_4px_0_0_#000] cursor-pointer"
                           >
-                            EQUIP
+                            {t('btn.equip', 'EQUIP')}
                           </motion.button>
                         ) : (
                           <motion.button
@@ -213,7 +215,7 @@ export default function StorePage({
                                 : 'bg-rose-300 text-black opacity-80'
                             }`}
                           >
-                            <span>UNLOCK</span>
+                            <span>{t('btn.unlock', 'UNLOCK')}</span>
                             <span className="px-2 py-0.5 rounded-full bg-black text-white text-[9px] sm:text-[11px] font-black flex items-center gap-1">
                               <CoinIcon className="w-3.5 h-3.5" />
                               <span>{ball.price}</span>
@@ -251,7 +253,7 @@ export default function StorePage({
                         {isEquipped && (
                           <span className="text-[9px] sm:text-[11px] font-black uppercase tracking-wider px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full border-[1.5px] sm:border-[2px] border-black bg-emerald-400 text-black flex items-center gap-1">
                             <Check className="w-3 h-3 stroke-[3]" />
-                            ACTIVE
+                            {t('common.active', 'ACTIVE')}
                           </span>
                         )}
                       </div>
@@ -273,7 +275,7 @@ export default function StorePage({
                             disabled
                             className="w-full py-1.5 sm:py-2.5 rounded-[12px] sm:rounded-[16px] font-black text-[10px] sm:text-xs md:text-sm uppercase tracking-wider bg-slate-200 text-slate-700 border-[2px] sm:border-[2.5px] border-black cursor-default"
                           >
-                            EQUIPPED
+                            {t('btn.equipped', 'EQUIPPED')}
                           </button>
                         ) : isUnlocked ? (
                           <motion.button
@@ -282,7 +284,7 @@ export default function StorePage({
                             onClick={() => handleBuyOrEquipPitch(pitch)}
                             className="w-full py-1.5 sm:py-2.5 rounded-[12px] sm:rounded-[16px] font-black text-[10px] sm:text-xs md:text-sm uppercase tracking-wider bg-emerald-400 text-black border-[2px] sm:border-[2.5px] border-black shadow-[0_3px_0_0_#000] sm:shadow-[0_4px_0_0_#000] cursor-pointer"
                           >
-                            EQUIP
+                            {t('btn.equip', 'EQUIP')}
                           </motion.button>
                         ) : (
                           <motion.button
@@ -295,7 +297,7 @@ export default function StorePage({
                                 : 'bg-rose-300 text-black opacity-80'
                             }`}
                           >
-                            <span>UNLOCK</span>
+                            <span>{t('btn.unlock', 'UNLOCK')}</span>
                             <span className="px-2 py-0.5 rounded-full bg-black text-white text-[9px] sm:text-[11px] font-black flex items-center gap-1">
                               <CoinIcon className="w-3.5 h-3.5" />
                               <span>{pitch.price}</span>

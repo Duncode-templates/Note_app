@@ -21,6 +21,7 @@ import {
   startNewSeason,
   getRandomOpponentForDivision,
 } from '../data/divisionData';
+import { useTranslation } from '../utils/i18n';
 import LazyFlagImage from './LazyFlagImage';
 
 interface DivisionDashboardPageProps {
@@ -42,6 +43,7 @@ export default function DivisionDashboardPage({
   onPlayNextMatch,
   onClaimSeasonReward,
 }: DivisionDashboardPageProps) {
+  const { t } = useTranslation();
   const [showRewardModal, setShowRewardModal] = useState(Boolean(divisionState.pendingSeasonReward));
   const [showOpponentModal, setShowOpponentModal] = useState(false);
   const [opponentSearch, setOpponentSearch] = useState('');
@@ -129,7 +131,7 @@ export default function DivisionDashboardPage({
 
           <div className="flex items-center gap-2">
             <span className="text-base sm:text-xl font-black uppercase tracking-wider text-black">
-              DIVISIONS
+              {t('divisions.title', 'DIVISIONS')}
             </span>
             <span className="text-[10px] sm:text-xs font-black uppercase px-2 py-0.5 rounded-full border-[1.5px] border-black bg-amber-400 text-black shadow-xs">
               {tier.shortName}
@@ -160,7 +162,7 @@ export default function DivisionDashboardPage({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-[14px] border-[2px] border-black bg-amber-400 flex flex-col items-center justify-center shadow-[0_2px_0_0_#000] shrink-0">
-                <span className="text-[7.5px] font-black uppercase text-amber-950 leading-none">RANK</span>
+                <span className="text-[7.5px] font-black uppercase text-amber-950 leading-none">{t('divisions.rank', 'RANK')}</span>
                 <span className="text-xs sm:text-sm font-black text-black leading-none mt-0.5 text-center px-1 truncate w-full">
                   {tier.shortName}
                 </span>
@@ -170,7 +172,7 @@ export default function DivisionDashboardPage({
                   {tier.name}
                 </span>
                 <span className="text-[10px] sm:text-xs font-bold text-slate-500">
-                  {tier.description} • Match {matchesPlayedThisSeason + 1} of {tier.totalMatches}
+                  {tier.description} • {t('divisions.match', 'Match')} {matchesPlayedThisSeason + 1} {t('divisions.of', 'of')} {tier.totalMatches}
                 </span>
               </div>
             </div>
@@ -178,7 +180,7 @@ export default function DivisionDashboardPage({
             {/* Current Stats Pills */}
             <div className="flex items-center gap-1.5">
               <div className="bg-amber-100 border-[1.5px] border-black rounded-[10px] px-2 py-1 text-center">
-                <span className="text-[9px] font-bold uppercase text-amber-900 block leading-tight">PTS</span>
+                <span className="text-[9px] font-bold uppercase text-amber-900 block leading-tight">{t('divisions.pts', 'PTS')}</span>
                 <span className="text-xs sm:text-sm font-black text-black leading-tight">{currentPoints}</span>
               </div>
               <div className="bg-emerald-100 border-[1.5px] border-black rounded-[10px] px-2 py-1 text-center">
@@ -195,16 +197,16 @@ export default function DivisionDashboardPage({
             <div className="flex items-center justify-between text-[11px] font-black uppercase">
               <span className="text-slate-700 flex items-center gap-1">
                 <TrendingUp className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
-                {currentDivision > 1 ? `Next: ${getTierInfo(currentDivision - 1).name}` : 'Title Target'}
+                {currentDivision > 1 ? `${t('divisions.next', 'Next')}: ${getTierInfo(currentDivision - 1).name}` : t('divisions.titleTarget', 'Title Target')}
               </span>
               <span className="text-emerald-700">
                 {currentDivision === 1
                   ? currentPoints >= tier.pointsForTitle
-                    ? 'TITLE CLAIMED!'
-                    : `${Math.max(0, tier.pointsForTitle - currentPoints)} PTS for Trophy`
+                    ? t('divisions.titleClaimed', 'TITLE CLAIMED!')
+                    : `${Math.max(0, tier.pointsForTitle - currentPoints)} ${t('divisions.ptsForTrophy', 'PTS for Trophy')}`
                   : pointsNeededToTransfer === 0
-                  ? 'PROMOTION ACHIEVED!'
-                  : `${pointsNeededToTransfer} PTS needed`}
+                  ? t('divisions.promotionAchieved', 'PROMOTION ACHIEVED!')
+                  : `${pointsNeededToTransfer} ${t('divisions.ptsNeeded', 'PTS needed')}`}
               </span>
             </div>
 
@@ -216,9 +218,9 @@ export default function DivisionDashboardPage({
                 className="h-full rounded-full bg-gradient-to-r from-yellow-400 via-amber-400 to-emerald-400 border-r border-black"
               />
               <div className="absolute inset-0 flex items-center justify-between px-2.5 text-[9px] sm:text-[10px] font-black uppercase pointer-events-none text-black">
-                <span>0 PTS</span>
-                <span>{currentPoints} / {targetTransferPoints} PTS</span>
-                <span>{currentDivision > 1 ? getTierInfo(currentDivision - 1).shortName : 'TITLE'}</span>
+                <span>0 {t('divisions.pts', 'PTS')}</span>
+                <span>{currentPoints} / {targetTransferPoints} {t('divisions.pts', 'PTS')}</span>
+                <span>{currentDivision > 1 ? getTierInfo(currentDivision - 1).shortName : t('divisions.titleUpper', 'TITLE')}</span>
               </div>
             </div>
           </div>
@@ -236,11 +238,11 @@ export default function DivisionDashboardPage({
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
               <span className="text-xs font-black uppercase text-black">
-                NEXT MATCH • CHOOSE OPPONENT
+                {t('divisions.nextMatchChooseOpponent', 'NEXT MATCH • CHOOSE OPPONENT')}
               </span>
             </div>
             <span className="text-[10px] font-bold text-slate-500 uppercase">
-              {matchesRemaining} Matches Left
+              {matchesRemaining} {t('divisions.matchesLeft', 'Matches Left')}
             </span>
           </div>
 
@@ -256,7 +258,7 @@ export default function DivisionDashboardPage({
               <span className="font-black text-xs sm:text-sm text-black uppercase truncate max-w-[110px]">
                 {userCountry.name}
               </span>
-              <span className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase">YOU</span>
+              <span className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase">{t('divisions.you', 'YOU')}</span>
             </div>
 
             {/* VS Badge */}
@@ -284,7 +286,7 @@ export default function DivisionDashboardPage({
                 {selectedOpponent.name}
               </span>
               <span className="text-[8px] sm:text-[9px] font-black text-amber-700 uppercase bg-amber-200 border border-black px-1.5 py-0.2 rounded-full">
-                CHANGE ▾
+                {t('divisions.change', 'CHANGE ▾')}
               </span>
             </motion.button>
           </div>
@@ -298,7 +300,7 @@ export default function DivisionDashboardPage({
               className="flex-1 py-2 px-3 rounded-[12px] font-black text-xs uppercase bg-slate-100 hover:bg-slate-200 text-slate-900 border-[2px] border-black shadow-[0_2px_0_0_#000] cursor-pointer flex items-center justify-center gap-1.5"
             >
               <Users className="w-3.5 h-3.5 text-black" />
-              <span>CHOOSE OPPONENT ({selectedOpponent.name})</span>
+              <span>{t('divisions.chooseOpponent', 'CHOOSE OPPONENT')} ({selectedOpponent.name})</span>
             </motion.button>
 
             <motion.button
@@ -315,17 +317,17 @@ export default function DivisionDashboardPage({
           {/* Rewards & Points Rule Pill */}
           <div className="grid grid-cols-3 gap-1.5 sm:gap-2 text-center text-xs font-black">
             <div className="bg-emerald-50 border-[1.5px] border-black rounded-[10px] p-1.5 flex flex-col items-center justify-center">
-              <span className="text-emerald-900 text-[10px] uppercase font-black">WIN</span>
-              <span className="text-black font-black text-xs">+3 PTS • +10 🪙</span>
+              <span className="text-emerald-900 text-[10px] uppercase font-black">{t('divisions.win', 'WIN')}</span>
+              <span className="text-black font-black text-xs">+3 {t('divisions.pts', 'PTS')} • +10 🪙</span>
             </div>
             <div className="bg-amber-50 border-[1.5px] border-black rounded-[10px] p-1.5 flex flex-col items-center justify-center">
-              <span className="text-amber-900 text-[10px] uppercase font-black">DRAW</span>
-              <span className="text-black font-black text-xs">+1 PT • 0 🪙</span>
+              <span className="text-amber-900 text-[10px] uppercase font-black">{t('divisions.draw', 'DRAW')}</span>
+              <span className="text-black font-black text-xs">+1 {t('divisions.pt', 'PT')} • 0 🪙</span>
             </div>
             <div className="bg-rose-50 border-[1.5px] border-black rounded-[10px] p-1.5 flex flex-col items-center justify-center">
-              <span className="text-rose-900 text-[10px] uppercase font-black">LOSS</span>
+              <span className="text-rose-900 text-[10px] uppercase font-black">{t('divisions.loss', 'LOSS')}</span>
               <span className="text-black font-black text-xs">
-                {tier.pointsLostOnDefeat > 0 ? `-${tier.pointsLostOnDefeat} PTS` : '0 PTS'} • 0 🪙
+                {tier.pointsLostOnDefeat > 0 ? `-${tier.pointsLostOnDefeat} ${t('divisions.pts', 'PTS')}` : `0 ${t('divisions.pts', 'PTS')}`} • 0 🪙
               </span>
             </div>
           </div>
@@ -338,7 +340,7 @@ export default function DivisionDashboardPage({
             className="w-full py-3.5 px-4 rounded-[16px] font-black text-sm sm:text-base uppercase tracking-wider bg-amber-400 hover:bg-amber-300 text-black border-[3px] border-black shadow-[0_4px_0_0_#000] cursor-pointer flex items-center justify-center gap-2 outline-none mt-0.5"
           >
             <Play className="w-5 h-5 fill-black text-black" />
-            <span>PLAY MATCH VS {selectedOpponent.name}</span>
+            <span>{t('divisions.playMatchVs', 'PLAY MATCH VS')} {selectedOpponent.name}</span>
           </motion.button>
         </motion.div>
 
@@ -354,7 +356,7 @@ export default function DivisionDashboardPage({
             <div className="flex items-center gap-1.5">
               <History className="w-4 h-4 text-black" />
               <span className="text-xs font-black uppercase text-black">
-                MATCHES HISTORY
+                {t('divisions.matchesHistory', 'MATCHES HISTORY')}
               </span>
             </div>
 
@@ -368,7 +370,7 @@ export default function DivisionDashboardPage({
                     : 'text-slate-600 hover:text-black'
                 }`}
               >
-                THIS SEASON ({seasonMatches.length})
+                {t('divisions.thisSeason', 'THIS SEASON')} ({seasonMatches.length})
               </button>
               <button
                 onClick={() => setHistoryTab('all')}
@@ -378,7 +380,7 @@ export default function DivisionDashboardPage({
                     : 'text-slate-600 hover:text-black'
                 }`}
               >
-                ALL TIME ({allTimeHistory.length})
+                {t('divisions.allTime', 'ALL TIME')} ({allTimeHistory.length})
               </button>
             </div>
           </div>
@@ -464,10 +466,10 @@ export default function DivisionDashboardPage({
                 <History className="w-5 h-5 text-slate-600" />
               </div>
               <span className="font-black text-xs uppercase text-slate-800">
-                NO MATCHES PLAYED YET
+                {t('divisions.noMatchesYet', 'NO MATCHES PLAYED YET')}
               </span>
               <p className="text-[10px] text-slate-500 max-w-xs">
-                Select your next opponent above and play your first match in Division {currentDivision} to start your history!
+                {t('divisions.noMatchesSub', 'Select your next opponent above and play your first match in Division to start your history!')}
               </p>
             </div>
           )}
@@ -494,7 +496,7 @@ export default function DivisionDashboardPage({
                 <div className="flex items-center gap-2">
                   <Users className="w-5 h-5 text-black" />
                   <h3 className="text-sm sm:text-base font-black uppercase text-black">
-                    WHO DO YOU WANT TO PLAY NEXT?
+                    {t('divisions.whoDoYouWantToPlay', 'WHO DO YOU WANT TO PLAY NEXT?')}
                   </h3>
                 </div>
                 <button
@@ -513,7 +515,7 @@ export default function DivisionDashboardPage({
                     type="text"
                     value={opponentSearch}
                     onChange={(e) => setOpponentSearch(e.target.value)}
-                    placeholder="Search national team (e.g. Brazil, France, England)..."
+                    placeholder={t('divisions.searchNationalTeam', 'Search national team (e.g. Brazil, France, England)...')}
                     className="w-full pl-9 pr-8 py-2 bg-white border-[2px] border-black rounded-[12px] text-xs font-bold text-black placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-amber-400"
                     autoFocus
                   />
@@ -571,13 +573,13 @@ export default function DivisionDashboardPage({
               {/* Modal Footer */}
               <div className="p-3 border-t-[2px] border-black bg-slate-50 flex items-center justify-between shrink-0">
                 <span className="text-[11px] font-bold text-slate-600">
-                  {filteredOpponents.length} teams available
+                  {filteredOpponents.length} {t('divisions.teamsAvailable', 'teams available')}
                 </span>
                 <button
                   onClick={() => setShowOpponentModal(false)}
                   className="px-4 py-1.5 bg-amber-400 hover:bg-amber-300 border-[2px] border-black rounded-[10px] font-black text-xs uppercase text-black shadow-xs cursor-pointer"
                 >
-                  DONE
+                  {t('common.done', 'DONE')}
                 </button>
               </div>
             </motion.div>
@@ -605,20 +607,20 @@ export default function DivisionDashboardPage({
               </div>
 
               <div className="flex flex-col">
-                <span className="text-[10px] font-black uppercase text-amber-700">SEASON FINISHED</span>
+                <span className="text-[10px] font-black uppercase text-amber-700">{t('divisions.seasonFinished', 'SEASON FINISHED')}</span>
                 <h3 className="text-xl font-black uppercase text-black">{pendingSeasonReward.title}</h3>
               </div>
 
               <div className="w-full bg-amber-50 border-[2px] border-black rounded-[14px] p-2.5 flex items-center justify-center gap-2">
                 <Coins className="w-4 h-4 text-amber-900" />
-                <span className="text-sm font-black text-black">+{pendingSeasonReward.coins} COINS</span>
+                <span className="text-sm font-black text-black">+{pendingSeasonReward.coins} {t('common.coinsUpper', 'COINS')}</span>
               </div>
 
               <button
                 onClick={handleClaimReward}
                 className="w-full py-3 rounded-[14px] font-black text-sm uppercase bg-emerald-400 hover:bg-emerald-300 text-black border-[2.5px] border-black shadow-[0_3px_0_0_#000] cursor-pointer"
               >
-                CONTINUE TO {getTierInfo(pendingSeasonReward.newDivision).name.toUpperCase()}
+                {t('divisions.continueTo', 'CONTINUE TO')} {getTierInfo(pendingSeasonReward.newDivision).name.toUpperCase()}
               </button>
             </motion.div>
           </motion.div>

@@ -929,7 +929,7 @@ class OnlineMatchManager {
 
       const createdRoomId = await this.createRoom(gameMode, undefined, true, undefined, null, wagerTier, entryFee, prizePot);
 
-      // Bot Fallback Timer: After 15 seconds of waiting without a real player, smoothly pair with a realistic bot opponent
+      // Bot Fallback Timer: After 30 seconds of waiting without a real player, smoothly pair with a realistic bot opponent
       if (this.botFallbackTimer) {
         clearTimeout(this.botFallbackTimer);
       }
@@ -985,7 +985,7 @@ class OnlineMatchManager {
 
         this.emit('player_joined', { guest: botPlayer, room: this.currentRoom });
         this.emit('room_joined', { roomId: this.currentRoom.roomId, role: 'host', room: this.currentRoom });
-      }, 15000);
+      }, 30000);
 
       // Periodically check if another searching player created an older room or if someone joined
       this.matchmakingInterval = setInterval(async () => {
@@ -1255,7 +1255,7 @@ class OnlineMatchManager {
       this.startHeartbeat(roomId);
       this.initPeerHost(roomId);
 
-      // Bot Fallback Timer for Division Matchmaking: After 15 seconds of searching, pair with a division bot
+      // Bot Fallback Timer for Division Matchmaking: After 30 seconds of searching, pair with a division bot
       if (this.botFallbackTimer) {
         clearTimeout(this.botFallbackTimer);
       }
@@ -1301,7 +1301,7 @@ class OnlineMatchManager {
           hostCountryCode: countryCode,
           guestCountryCode: botCountryCode,
         });
-      }, 15000);
+      }, 30000);
 
       return true;
     } catch (error: any) {

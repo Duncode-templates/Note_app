@@ -23,6 +23,7 @@ import { onlineMatchManager } from '../utils/onlineMatchManager';
 import { OnlineMatchRoom } from '../types';
 import { playKickSound } from '../utils/mediaPreloader';
 import { getBotInstinctCountry, getBotProfileById, getBotProfileByUsername, getRandomBotProfile } from '../data/botProfiles';
+import { useTranslation } from '../utils/i18n';
 
 interface OnlineCountrySelectionPageProps {
   room: OnlineMatchRoom;
@@ -35,6 +36,7 @@ export default function OnlineCountrySelectionPage({
   onBack,
   onMatchStart,
 }: OnlineCountrySelectionPageProps) {
+  const { t } = useTranslation();
   const [room, setRoom] = useState<OnlineMatchRoom>(initialRoom || onlineMatchManager.currentRoom);
   const roomRef = useRef<OnlineMatchRoom>(initialRoom || onlineMatchManager.currentRoom);
   if (room) {
@@ -336,13 +338,13 @@ export default function OnlineCountrySelectionPage({
               className="px-3.5 py-2.5 rounded-[16px] font-black uppercase tracking-wider bg-white text-black border-[3px] border-black shadow-[0_4px_0_0_#000] cursor-pointer flex items-center gap-2 text-xs sm:text-sm outline-none"
             >
               <ArrowLeft className="w-4 h-4 text-black" />
-              <span>LEAVE ROOM</span>
+              <span>{t('online.leaveRoom', 'LEAVE ROOM')}</span>
             </motion.button>
 
             <div className="flex items-center gap-2 bg-white/90 border-[2.5px] border-black px-3 py-1.5 rounded-full shadow-[0_3px_0_0_#000]">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
               <span className="text-[11px] font-black tracking-wider uppercase text-black">
-                ROOM: <span className="font-mono text-emerald-700 font-black">{room?.roomId || initialRoom?.roomId || onlineMatchManager.currentRoom?.roomId || 'ONLINE'}</span>
+                {t('online.room', 'ROOM')}: <span className="font-mono text-emerald-700 font-black">{room?.roomId || initialRoom?.roomId || onlineMatchManager.currentRoom?.roomId || 'ONLINE'}</span>
               </span>
               <button
                 onClick={handleCopyCode}
@@ -364,10 +366,10 @@ export default function OnlineCountrySelectionPage({
               <Timer className="w-6 h-6 text-black animate-spin" />
               <div>
                 <span className="text-[10px] font-black uppercase tracking-widest text-black/80 block">
-                  MATCH STARTING IN
+                  {t('online.matchStartingIn', 'MATCH STARTING IN')}
                 </span>
                 <span className="text-2xl sm:text-3xl font-black text-black tracking-wider font-mono">
-                  {countdownSeconds > 0 ? `${countdownSeconds}s` : 'KICK-OFF!'}
+                  {countdownSeconds > 0 ? `${countdownSeconds}s` : t('online.kickoff', 'KICK-OFF!')}
                 </span>
               </div>
             </motion.div>
@@ -416,16 +418,16 @@ export default function OnlineCountrySelectionPage({
                   <div className="flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-slate-600">
                     {isHost ? (
                       <span className="inline-flex items-center gap-1 text-amber-600">
-                        <Crown className="w-3 h-3 stroke-[2.5]" /> Host
+                        <Crown className="w-3 h-3 stroke-[2.5]" /> {t('online.host', 'Host')}
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 text-sky-600">
-                        <Zap className="w-3 h-3 stroke-[2.5]" /> Guest
+                        <Zap className="w-3 h-3 stroke-[2.5]" /> {t('online.guest', 'Guest')}
                       </span>
                     )}
                     <span>•</span>
                     <span className="text-[10px] font-bold text-slate-500">
-                      {isHost ? '1st Turn' : '2nd Turn'}
+                      {isHost ? t('online.firstTurn', '1st Turn') : t('online.secondTurn', '2nd Turn')}
                     </span>
                   </div>
                 </div>
@@ -434,11 +436,11 @@ export default function OnlineCountrySelectionPage({
               {/* Status Badge */}
               {myCountry ? (
                 <span className="bg-emerald-500 text-white font-black text-[10px] uppercase px-2.5 py-1 rounded-full border-2 border-black flex items-center gap-1 shadow-xs shrink-0">
-                  <Check className="w-3 h-3 stroke-[3]" /> LOCKED IN
+                  <Check className="w-3 h-3 stroke-[3]" /> {t('online.lockedIn', 'LOCKED IN')}
                 </span>
               ) : (
                 <span className="bg-amber-400 text-black font-black text-[10px] uppercase px-2.5 py-1 rounded-full border-2 border-black animate-pulse shrink-0">
-                  SELECTING
+                  {t('online.selecting', 'SELECTING')}
                 </span>
               )}
             </div>
@@ -466,7 +468,7 @@ export default function OnlineCountrySelectionPage({
             ) : (
               <div className="p-2 rounded-[14px] border-2 border-dashed border-slate-300 bg-slate-50 text-slate-500 text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                <span>Select your team below</span>
+                <span>{t('online.selectTeamBelow', 'Select your team below')}</span>
               </div>
             )}
           </div>
@@ -509,16 +511,16 @@ export default function OnlineCountrySelectionPage({
                   <div className="flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-slate-600">
                     {!isHost ? (
                       <span className="inline-flex items-center gap-1 text-amber-600">
-                        <Crown className="w-3 h-3 stroke-[2.5]" /> Host
+                        <Crown className="w-3 h-3 stroke-[2.5]" /> {t('online.host', 'Host')}
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 text-sky-600">
-                        <Zap className="w-3 h-3 stroke-[2.5]" /> Guest
+                        <Zap className="w-3 h-3 stroke-[2.5]" /> {t('online.guest', 'Guest')}
                       </span>
                     )}
                     <span>•</span>
                     <span className="text-[10px] font-bold text-slate-500">
-                      {!isHost ? '1st Turn' : '2nd Turn'}
+                      {!isHost ? t('online.firstTurn', '1st Turn') : t('online.secondTurn', '2nd Turn')}
                     </span>
                   </div>
                 </div>
@@ -527,11 +529,11 @@ export default function OnlineCountrySelectionPage({
               {/* Status Badge */}
               {opponentCountry ? (
                 <span className="bg-rose-500 text-white font-black text-[10px] uppercase px-2.5 py-1 rounded-full border-2 border-black flex items-center gap-1 shadow-xs shrink-0">
-                  <ShieldCheck className="w-3 h-3 stroke-[3]" /> READY
+                  <ShieldCheck className="w-3 h-3 stroke-[3]" /> {t('online.ready', 'READY')}
                 </span>
               ) : (
                 <span className="bg-sky-400 text-black font-black text-[10px] uppercase px-2.5 py-1 rounded-full border-2 border-black animate-pulse shrink-0">
-                  CHOOSING
+                  {t('online.choosing', 'CHOOSING')}
                 </span>
               )}
             </div>
@@ -559,7 +561,7 @@ export default function OnlineCountrySelectionPage({
             ) : (
               <div className="p-2 rounded-[14px] border-2 border-dashed border-slate-300 bg-slate-50 text-slate-500 text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5">
                 <Users className="w-3.5 h-3.5 text-sky-500 animate-pulse" />
-                <span>Waiting for opponent...</span>
+                <span>{t('online.waitingOpponent', 'Waiting for opponent...')}</span>
               </div>
             )}
           </div>
@@ -573,14 +575,14 @@ export default function OnlineCountrySelectionPage({
             <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Search Country (e.g. Brazil, Spain, France, Argentina)..."
+              placeholder={t('teamSelect.searchPlaceholder', 'Search Country (e.g. Brazil, Spain, France, Argentina)...')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 bg-slate-100 rounded-[14px] border-2 border-black font-black text-xs uppercase placeholder:normal-case placeholder:font-medium placeholder:text-slate-400 outline-none focus:border-sky-500"
             />
           </div>
           <div className="hidden sm:flex items-center gap-1 text-xs font-black text-black whitespace-nowrap px-3 py-1 bg-amber-300 rounded-[12px] border-2 border-black">
-            <span>{filteredCountries.length} TEAMS</span>
+            <span>{filteredCountries.length} {t('teamSelect.teams', 'TEAMS')}</span>
           </div>
         </div>
 
@@ -612,17 +614,17 @@ export default function OnlineCountrySelectionPage({
                 {/* TOP BADGE: MY COUNTRY / OPPONENT COUNTRY */}
                 {isMyCountry && isOppCountry && (
                   <div className="absolute top-0 right-0 bg-amber-500 text-black font-black text-[9px] uppercase px-2 py-0.5 rounded-bl-[12px] border-b-2 border-l-2 border-black flex items-center gap-1 shadow-xs z-10">
-                    <Flame className="w-3 h-3 stroke-[3]" /> BOTH SELECTED
+                    <Flame className="w-3 h-3 stroke-[3]" /> {t('online.bothSelected', 'BOTH SELECTED')}
                   </div>
                 )}
                 {isMyCountry && !isOppCountry && (
                   <div className="absolute top-0 right-0 bg-emerald-500 text-white font-black text-[9px] uppercase px-2 py-0.5 rounded-bl-[12px] border-b-2 border-l-2 border-black flex items-center gap-1 shadow-xs z-10">
-                    <Check className="w-3 h-3 stroke-[3]" /> YOUR COUNTRY
+                    <Check className="w-3 h-3 stroke-[3]" /> {t('online.yourCountry', 'YOUR COUNTRY')}
                   </div>
                 )}
                 {!isMyCountry && isOppCountry && (
                   <div className="absolute top-0 right-0 bg-rose-500 text-white font-black text-[9px] uppercase px-2 py-0.5 rounded-bl-[12px] border-b-2 border-l-2 border-black flex items-center gap-1 shadow-xs z-10">
-                    <Crosshair className="w-3 h-3 stroke-[3]" /> OPPONENT'S COUNTRY
+                    <Crosshair className="w-3 h-3 stroke-[3]" /> {t('online.oppCountry', "OPPONENT'S COUNTRY")}
                   </div>
                 )}
 
@@ -657,8 +659,8 @@ export default function OnlineCountrySelectionPage({
                     {country.name}
                   </div>
                   <div className="flex items-center justify-between text-[10px] font-bold text-slate-600 mt-1">
-                    <span>ATT {country.att}</span>
-                    <span>DEF {country.def}</span>
+                    <span>{t('teamSelect.att', 'ATT')} {country.att}</span>
+                    <span>{t('teamSelect.def', 'DEF')} {country.def}</span>
                   </div>
                 </div>
               </motion.button>
@@ -689,19 +691,19 @@ export default function OnlineCountrySelectionPage({
                 </div>
 
                 <span className="bg-rose-500 text-white font-black text-[10px] uppercase tracking-widest px-3 py-1 rounded-full inline-block mb-2">
-                  SESSION DISCONNECTED
+                  {t('online.sessionDisconnected', 'SESSION DISCONNECTED')}
                 </span>
 
                 <h2 className="text-xl sm:text-2xl font-black uppercase tracking-wider text-black mb-1">
-                  OPPONENT LEFT
+                  {t('online.opponentLeft', 'OPPONENT LEFT')}
                 </h2>
 
                 <p className="text-slate-600 text-xs sm:text-sm font-bold uppercase tracking-wider mb-5">
-                  The other player disconnected or left the room during team selection.
+                  {t('online.opponentLeftSub', 'The other player disconnected or left the room during team selection.')}
                 </p>
 
                 <div className="bg-slate-100 border-[2px] border-black rounded-[16px] p-3 mb-5 text-xs font-black text-slate-700">
-                  Returning to menu in <span className="font-mono text-rose-600 text-sm">{disconnectCountdown}s</span>
+                  {t('online.returningToMenu', 'Returning to menu in')} <span className="font-mono text-rose-600 text-sm">{disconnectCountdown}s</span>
                 </div>
 
                 <motion.button
@@ -714,7 +716,7 @@ export default function OnlineCountrySelectionPage({
                   className="w-full py-3.5 rounded-[18px] font-black text-sm uppercase tracking-wider bg-rose-500 hover:bg-rose-600 text-white border-[3px] border-black shadow-[0_4px_0_0_#000] cursor-pointer flex items-center justify-center gap-2"
                 >
                   <ArrowLeft className="w-4 h-4" />
-                  <span>RETURN TO MENU</span>
+                  <span>{t('online.returnToMenu', 'RETURN TO MENU')}</span>
                 </motion.button>
               </motion.div>
             </motion.div>

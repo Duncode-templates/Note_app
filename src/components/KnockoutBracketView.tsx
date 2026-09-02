@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { Play, Check, Crown, Sparkles } from 'lucide-react';
 import { Country, getFlagUrl, getCountryAbbr } from '../data/countries';
 import { KnockoutMatch } from '../data/tournamentData';
+import { useTranslation } from '../utils/i18n';
 import LazyFlagImage from './LazyFlagImage';
 import TrophyImage from './TrophyImage';
 
@@ -22,6 +23,7 @@ export default function KnockoutBracketView({
   isUserEliminated,
   isUserChampion,
 }: KnockoutBracketViewProps) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
 
   const r16Matches = knockoutMatches.filter((m) => m.stage === 'round_of_16');
@@ -56,7 +58,7 @@ export default function KnockoutBracketView({
             <div className="w-5 h-3.5 bg-slate-200 rounded-[3px] border border-slate-300 flex items-center justify-center text-[8px] text-slate-400 font-mono">
               ?
             </div>
-            <span className="italic text-slate-400 font-bold text-[11px]">TBD</span>
+            <span className="italic text-slate-400 font-bold text-[11px]">{t('tournament.tbd', 'TBD')}</span>
           </div>
           <span className="font-mono text-slate-400 text-xs">-</span>
         </div>
@@ -85,7 +87,7 @@ export default function KnockoutBracketView({
           </span>
           {isUser && (
             <span className="text-[8px] bg-emerald-500 text-white font-black px-1 py-0.2 rounded border border-black shrink-0">
-              YOU
+              {t('divisions.you', 'YOU')}
             </span>
           )}
           {isWinner && (
@@ -146,13 +148,13 @@ export default function KnockoutBracketView({
         <div className="h-6 bg-slate-900 text-white px-2.5 flex items-center justify-between text-[10px] font-black uppercase tracking-wider shrink-0 border-b border-black">
           <span className="text-amber-400 truncate max-w-[110px]">{match.stageName}</span>
           {match.isCompleted ? (
-            <span className="text-emerald-400 shrink-0">FT</span>
+            <span className="text-emerald-400 shrink-0">{t('tournament.ft', 'FT')}</span>
           ) : canPlay ? (
             <span className="text-emerald-300 font-black animate-pulse shrink-0 flex items-center gap-1">
-              <Play className="w-2.5 h-2.5 fill-emerald-300" /> PLAY
+              <Play className="w-2.5 h-2.5 fill-emerald-300" /> {t('common.play', 'PLAY')}
             </span>
           ) : (
-            <span className="text-slate-400 shrink-0">FIXTURE</span>
+            <span className="text-slate-400 shrink-0">{t('tournament.fixture', 'FIXTURE')}</span>
           )}
         </div>
 
@@ -199,7 +201,7 @@ export default function KnockoutBracketView({
             {/* Column 1: Left Round of 16 (4 Matches, Height: 480px) */}
             <div className="flex flex-col items-center gap-2.5">
               <div className="px-3 py-1 bg-slate-900 text-amber-400 font-black text-[10px] uppercase tracking-wider rounded-full border-2 border-black shadow-xs whitespace-nowrap">
-                ROUND OF 16
+                {t('tournament.roundOf16', 'ROUND OF 16')}
               </div>
               <div className="w-44 sm:w-48 h-[480px] relative">
                 {/* Match 0 (Y: 0..96, Center: 48) */}
@@ -246,7 +248,7 @@ export default function KnockoutBracketView({
             {/* Column 2: Left Quarter-Finals (2 Matches, Height: 480px) */}
             <div className="flex flex-col items-center gap-2.5">
               <div className="px-3 py-1 bg-slate-900 text-amber-400 font-black text-[10px] uppercase tracking-wider rounded-full border-2 border-black shadow-xs whitespace-nowrap">
-                QUARTER-FINALS
+                {t('tournament.quarterFinals', 'QUARTER-FINALS')}
               </div>
               <div className="w-44 sm:w-48 h-[480px] relative">
                 {/* QF 0 (Y: 60..156, Center: 108) */}
@@ -277,7 +279,7 @@ export default function KnockoutBracketView({
             {/* Column 3: Left Semi-Final (1 Match, Height: 480px) */}
             <div className="flex flex-col items-center gap-2.5">
               <div className="px-3 py-1 bg-slate-900 text-amber-400 font-black text-[10px] uppercase tracking-wider rounded-full border-2 border-black shadow-xs whitespace-nowrap">
-                SEMI-FINAL 1
+                {t('tournament.semiFinal1', 'SEMI-FINAL 1')}
               </div>
               <div className="w-44 sm:w-48 h-[480px] relative">
                 {/* SF 0 (Y: 192..288, Center: 240) */}
@@ -316,10 +318,10 @@ export default function KnockoutBracketView({
               </div>
               
               <span className="text-[10px] font-black uppercase text-amber-900 bg-amber-300 px-2.5 py-0.5 rounded-full border-2 border-black shadow-2xs">
-                THE FREE KICK CUP
+                {t('tournament.freeKickCup', 'THE FREE KICK CUP')}
               </span>
               <h2 className="text-lg sm:text-xl font-black uppercase text-black tracking-wider mt-0.5">
-                WORLD FINAL
+                {t('tournament.worldFinal', 'WORLD FINAL')}
               </h2>
             </div>
 
@@ -344,7 +346,7 @@ export default function KnockoutBracketView({
               <div className="flex items-center gap-1">
                 <Crown className="w-4 h-4 text-amber-900" />
                 <span className="text-[9px] font-black uppercase text-slate-900 tracking-wider">
-                  FREE KICK CUP CHAMPION
+                  {t('tournament.championTitle', 'FREE KICK CUP CHAMPION')}
                 </span>
               </div>
 
@@ -364,16 +366,16 @@ export default function KnockoutBracketView({
                     {championTeam.name}
                   </span>
                   <span className="text-[9px] font-black uppercase bg-black text-amber-300 px-2 py-0.5 rounded-full mt-0.5">
-                    WORLD CHAMPIONS 🏆
+                    {t('tournament.worldChampions', 'WORLD CHAMPIONS 🏆')}
                   </span>
                 </div>
               ) : (
                 <div className="py-1 flex flex-col items-center gap-0.5">
                   <span className="font-bold text-[11px] italic text-slate-600 uppercase">
-                    Awaiting Final Conclusion
+                    {t('tournament.awaitingFinal', 'Awaiting Final Conclusion')}
                   </span>
                   <span className="text-[9px] text-slate-500 font-bold">
-                    Winner lifts the Free Kick Cup
+                    {t('tournament.winnerLiftsCup', 'Winner lifts the Free Kick Cup')}
                   </span>
                 </div>
               )}
@@ -401,7 +403,7 @@ export default function KnockoutBracketView({
             {/* Column 4: Right Semi-Final (1 Match, Height: 480px) */}
             <div className="flex flex-col items-center gap-2.5">
               <div className="px-3 py-1 bg-slate-900 text-amber-400 font-black text-[10px] uppercase tracking-wider rounded-full border-2 border-black shadow-xs whitespace-nowrap">
-                SEMI-FINAL 2
+                {t('tournament.semiFinal2', 'SEMI-FINAL 2')}
               </div>
               <div className="w-44 sm:w-48 h-[480px] relative">
                 {/* SF 1 (Y: 192..288, Center: 240) */}
@@ -428,7 +430,7 @@ export default function KnockoutBracketView({
             {/* Column 5: Right Quarter-Finals (2 Matches, Height: 480px) */}
             <div className="flex flex-col items-center gap-2.5">
               <div className="px-3 py-1 bg-slate-900 text-amber-400 font-black text-[10px] uppercase tracking-wider rounded-full border-2 border-black shadow-xs whitespace-nowrap">
-                QUARTER-FINALS
+                {t('tournament.quarterFinals', 'QUARTER-FINALS')}
               </div>
               <div className="w-44 sm:w-48 h-[480px] relative">
                 {/* QF 2 (Y: 60..156, Center: 108) */}
@@ -467,7 +469,7 @@ export default function KnockoutBracketView({
             {/* Column 6: Right Round of 16 (4 Matches, Height: 480px) */}
             <div className="flex flex-col items-center gap-2.5">
               <div className="px-3 py-1 bg-slate-900 text-amber-400 font-black text-[10px] uppercase tracking-wider rounded-full border-2 border-black shadow-xs whitespace-nowrap">
-                ROUND OF 16
+                {t('tournament.roundOf16', 'ROUND OF 16')}
               </div>
               <div className="w-44 sm:w-48 h-[480px] relative">
                 {/* Match 4 (Y: 0..96, Center: 48) */}

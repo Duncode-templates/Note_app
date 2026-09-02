@@ -33,6 +33,7 @@ import SurvivalGameOverModal from './SurvivalGameOverModal';
 import { playKickSound, playKeeperHitSound, playBallHitPlayerSound, playWhistleSound, playGoalCheerSound, stopGoalCheerSound, playSuperpowerSound, playLockAimSound } from '../utils/mediaPreloader';
 import { startMatchCrowd, stopMatchCrowd, setCrowdExcitement } from '../utils/stadiumCrowdAudio';
 import { crazyGamesSDK } from '../utils/crazyGamesSDK';
+import { useTranslation } from '../utils/i18n';
 
 interface Stadium3DViewProps {
   country: Country;
@@ -654,6 +655,7 @@ export default function Stadium3DView({
   onEarnCoins,
   savedReplayClip,
 }: Stadium3DViewProps) {
+  const { t } = useTranslation();
   const mountRef = useRef<HTMLDivElement>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -5798,6 +5800,7 @@ export default function Stadium3DView({
                 const camY = Math.max(3.6, ballPos.y + 2.2 * distScale);
                 const camZ = THREE.MathUtils.lerp(origSpotZ + 7.5 * distScale, ballPos.z + 8.5 * distScale, 0.50);
                 cameraRef.current.position.set(camX, camY, camZ);
+                cameraRef.current.lookAt(ballPos.x, Math.max(0.25, ballPos.y), ballPos.z);
               } else if (replayCamAngleRef.current === 'behind_goal') {
                 // 2. SECOND REPLAY CAMERA: Elevated behind-the-goal TV broadcast view that dynamically tracks the ball
                 const ballPos = ballMeshRef.current ? ballMeshRef.current.position : _scratchV3_1.set(0, 0.3, -36.0);
@@ -5813,6 +5816,7 @@ export default function Stadium3DView({
                 const camY = Math.max(5.6, 6.8 + (ballPos.y - 1.2) * 0.35) * distScale;
                 const camZ = -53.5;
                 cameraRef.current.position.set(camX, camY, camZ);
+                cameraRef.current.lookAt(ballPos.x, Math.max(0.35, ballPos.y), ballPos.z);
               }
             }
             controls.update();
@@ -8354,7 +8358,7 @@ export default function Stadium3DView({
                       ? 'bg-emerald-400 text-black animate-pulse'
                       : 'bg-purple-600 text-white'
                   }`}>
-                    {currentTurn === 'player' ? 'YOUR TURN TO KICK' : (isOnlineMatch ? 'OPPONENT TAKING PENALTY...' : 'AI TAKING PENALTY...')}
+                    {currentTurn === 'player' ? t('hud.yourTurnPenalty', 'YOUR TURN TO KICK') : (isOnlineMatch ? t('hud.oppPenalty', 'OPPONENT TAKING PENALTY...') : t('hud.aiPenalty', 'AI TAKING PENALTY...'))}
                   </div>
                 </div>
               ) : (
@@ -8468,7 +8472,7 @@ export default function Stadium3DView({
                 }`}
               >
                 <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider">
-                  PLAY IN:
+                  {t('hud.playIn', 'PLAY IN:')}
                 </span>
                 <span className="font-black text-xs sm:text-sm md:text-base min-w-[22px]">
                   {playInTimer}s
@@ -8488,14 +8492,14 @@ export default function Stadium3DView({
               <div className="flex flex-col text-left">
                 <div className="flex items-center gap-1.5">
                   <span className="font-black text-[11px] sm:text-xs md:text-xs uppercase tracking-wider text-black leading-tight whitespace-nowrap">
-                    WAGER MATCH
+                    {t('wager.duel', 'WAGER MATCH')}
                   </span>
                   <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-wider text-amber-950 bg-white/90 px-1.5 py-0.2 rounded-full border border-black/20">
                     {wagerTierInfo.badge}
                   </span>
                 </div>
                 <span className="text-[9px] sm:text-[10px] md:text-[11px] font-mono font-black uppercase tracking-tight text-amber-950 bg-amber-300/90 px-1.5 sm:px-2 py-0.5 rounded-[5px] md:rounded-[6px] border border-amber-950/20 mt-0.5 leading-tight whitespace-nowrap">
-                  💰 POT: {wagerPrizePot.toLocaleString()} COINS
+                  💰 {t('wager.prizePot', 'POT')}: {wagerPrizePot.toLocaleString()} {t('common.coins', 'COINS')}
                 </span>
               </div>
             </div>
@@ -8508,7 +8512,7 @@ export default function Stadium3DView({
               </div>
               <div className="flex flex-col text-left">
                 <span className="font-black text-[11px] sm:text-xs md:text-xs uppercase tracking-wider text-black leading-tight whitespace-nowrap">
-                  FIFA WORLD CUP
+                  {t('menu.worldCup', 'FIFA WORLD CUP')}
                 </span>
                 <span className="text-[8px] sm:text-[9px] md:text-[10px] font-black uppercase tracking-wider text-amber-950 bg-amber-300/90 px-1.5 sm:px-2 py-0.5 rounded-[5px] md:rounded-[6px] border border-amber-950/20 mt-0.5 leading-tight whitespace-nowrap">
                   {getWorldCupStageLabel()}
@@ -8584,10 +8588,10 @@ export default function Stadium3DView({
               <div className="flex items-center gap-1.5 bg-slate-950/90 text-white border-[2.5px] md:border-[3px] border-black rounded-[12px] md:rounded-[14px] px-2.5 sm:px-3.5 py-1 sm:py-1.5 shadow-[0_3px_0_0_#000] backdrop-blur-md">
                 <span className={`w-2 h-2 rounded-full border border-white ${isReplayPaused ? 'bg-amber-400' : 'bg-rose-500 animate-pulse'}`} />
                 <span className="font-black text-[10px] sm:text-xs md:text-xs tracking-widest text-white uppercase">
-                  {savedReplayClip ? 'SAVED HIGHLIGHT • ' : ''}{isReplayPaused ? 'PAUSED' : 'REPLAY'} {replayIndex}/2 • {
+                  {savedReplayClip ? `${t('replays.savedHighlight', 'SAVED HIGHLIGHT')} • ` : ''}{isReplayPaused ? t('hud.pause', 'PAUSED') : t('hud.replay', 'REPLAY')} {replayIndex}/2 • {
                     replayCamAngle === 'ball_tracking'
-                      ? 'BALL TRACKING'
-                      : 'BEHIND GOAL'
+                      ? t('hud.ballTracking', 'BALL TRACKING')
+                      : t('hud.behindGoal', 'BEHIND GOAL')
                   }
                 </span>
               </div>
@@ -8610,7 +8614,7 @@ export default function Stadium3DView({
                   title="Exit Replay Viewer"
                 >
                   <LogOut className="w-3.5 h-3.5" />
-                  <span>EXIT REPLAY</span>
+                  <span>{t('replays.exitReplay', 'EXIT REPLAY')}</span>
                 </button>
               ) : (
                 <>
@@ -8633,12 +8637,12 @@ export default function Stadium3DView({
                     {isCurrentReplaySaved ? (
                       <>
                         <Check className="w-3.5 h-3.5 stroke-[3]" />
-                        <span>SAVED</span>
+                        <span>{t('btn.saved', 'SAVED')}</span>
                       </>
                     ) : (
                       <>
                         <Bookmark className="w-3.5 h-3.5" />
-                        <span>SAVE</span>
+                        <span>{t('btn.save', 'SAVE')}</span>
                       </>
                     )}
                   </button>
@@ -8654,7 +8658,7 @@ export default function Stadium3DView({
                     title="Skip Replay"
                   >
                     <FastForward className="w-3.5 h-3.5 fill-black" />
-                    <span>SKIP</span>
+                    <span>{t('btn.skip', 'SKIP')}</span>
                   </button>
                 </>
               )}
@@ -8681,10 +8685,10 @@ export default function Stadium3DView({
                     />
                     <div className="flex flex-col min-w-0">
                       <span className="font-black text-[11px] sm:text-xs uppercase tracking-wide truncate text-black">
-                        {currentTurn === 'player' ? country.name : (opponentCountry?.name || 'AI OPPONENT')}
+                        {currentTurn === 'player' ? country.name : (opponentCountry?.name || t('hud.oppTurn', 'AI OPPONENT'))}
                       </span>
                       <span className="text-[9px] sm:text-[10px] font-bold text-slate-600 uppercase tracking-wider">
-                        {isPenaltyTraining || penaltyShootout.isActive ? 'PENALTY' : 'FREE KICK'}
+                        {isPenaltyTraining || penaltyShootout.isActive ? t('practice.penalty', 'PENALTY') : t('practice.freeKick', 'FREE KICK')}
                       </span>
                     </div>
                   </div>
@@ -8692,7 +8696,7 @@ export default function Stadium3DView({
                   {/* Free Kick Meter Badge */}
                   <div className="flex flex-col items-end shrink-0">
                     <span className="text-[8px] sm:text-[9px] font-black text-slate-500 uppercase tracking-wider">
-                      METER
+                      {t('hud.meter', 'METER')}
                     </span>
                     <span className="font-mono font-black text-[11px] sm:text-xs md:text-xs px-1.5 py-0.5 bg-amber-400 text-black border border-black rounded-[6px] shadow-2xs">
                       {fkDistance.toFixed(1)}m
@@ -8708,7 +8712,7 @@ export default function Stadium3DView({
                   <div className="flex flex-col min-w-0 flex-1">
                     <div className="flex items-center justify-between">
                       <span className="font-black text-[9px] sm:text-[10px] uppercase text-slate-900 truncate">
-                        {currentTurn === 'player' ? 'AI GOALKEEPER' : 'AI STRIKER'}
+                        {currentTurn === 'player' ? t('hud.aiGoalkeeper', 'AI GOALKEEPER') : t('hud.aiStriker', 'AI STRIKER')}
                       </span>
                       <span className="text-[8px] font-bold px-1 py-0.2 bg-purple-200 text-purple-900 rounded border border-purple-400">
                         PRO
@@ -8716,8 +8720,8 @@ export default function Stadium3DView({
                     </div>
                     <span className="text-[8px] sm:text-[9px] font-bold text-slate-500 truncate">
                       {currentTurn === 'player'
-                        ? `${opponentCountry?.name || 'AI'} Defense Simulation`
-                        : `${opponentCountry?.name || 'AI'} Precision Free Kick`}
+                        ? `${opponentCountry?.name || 'AI'} ${t('hud.defenseSim', 'Defense Simulation')}`
+                        : `${opponentCountry?.name || 'AI'} ${t('hud.precisionFK', 'Precision Free Kick')}`}
                     </span>
                   </div>
                 </div>
@@ -8765,11 +8769,11 @@ export default function Stadium3DView({
               </div>
               <div className="flex flex-col">
                 <span className="text-[8px] sm:text-[9px] md:text-[10px] font-black text-amber-300 uppercase tracking-widest flex items-center gap-1">
-                  <span>{isOnlineMatch ? `${opponentCountry?.name || 'OPPONENT'} TURN` : 'AI OPPONENT TURN'}</span>
+                  <span>{isOnlineMatch ? `${opponentCountry?.name || t('hud.oppTurn', 'OPPONENT')} ${t('hud.turn', 'TURN')}` : `${t('hud.oppTurn', 'AI OPPONENT TURN')}`}</span>
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
                 </span>
                 <span className="text-[9px] sm:text-xs md:text-xs font-black text-white uppercase tracking-wider">
-                  {isOnlineMatch ? 'WAITING FOR OPPONENT TO STRIKE...' : (aiStepStatus || 'PREPARING FREE KICK...')}
+                  {isOnlineMatch ? t('online.waitingOpponent', 'WAITING FOR OPPONENT TO STRIKE...') : (aiStepStatus || t('hud.aiStriking', 'PREPARING FREE KICK...'))}
                 </span>
               </div>
             </div>
@@ -8787,11 +8791,11 @@ export default function Stadium3DView({
                 <div className="flex items-center gap-1.5">
                   <Compass className="w-3.5 h-3.5 text-black shrink-0" />
                   <h3 className="font-black text-[11px] sm:text-xs uppercase tracking-wider text-black">
-                    AIM DIRECTION
+                    {t('hud.stepAim', 'AIM DIRECTION')}
                   </h3>
                 </div>
                 <span className="text-[8px] sm:text-[8.5px] font-black px-1.5 py-0.5 rounded-full bg-amber-400 border border-black text-black animate-pulse">
-                  SWEEPING
+                  {t('hud.aiming', 'SWEEPING')}
                 </span>
               </div>
 
@@ -8803,11 +8807,11 @@ export default function Stadium3DView({
                 className="w-full flex items-center justify-center gap-1.5 bg-gradient-to-r from-amber-400 via-amber-300 to-emerald-400 hover:from-amber-300 hover:to-emerald-300 active:scale-95 text-black py-2 px-2.5 rounded-[13px] border-[2px] border-black shadow-[0_2.5px_0_0_#000] font-black text-[10.5px] sm:text-xs uppercase tracking-wider cursor-pointer transition-all mt-0.5"
               >
                 <Flame className="w-3.5 h-3.5 text-black shrink-0 fill-black" />
-                <span>HOLD TO CHARGE POWER</span>
+                <span>{t('hud.holdToCharge', 'HOLD TO CHARGE POWER')}</span>
               </button>
 
               <div className="text-center text-[7.5px] sm:text-[8px] font-bold text-slate-500 uppercase tracking-tight">
-                HOLD SPACEBAR / SCREEN • RELEASE TO STRIKE
+                {t('hud.releaseToStrikeInstruction', 'HOLD SPACEBAR / SCREEN • RELEASE TO STRIKE')}
               </div>
             </motion.div>
           ) : setupStep === 'power' ? (
@@ -8826,7 +8830,7 @@ export default function Stadium3DView({
                 <div className="flex items-center gap-1.5">
                   <Flame className="w-3.5 h-3.5 text-amber-500 shrink-0 fill-amber-500" />
                   <h3 className="text-black font-black text-[11px] sm:text-xs tracking-wider uppercase">
-                    SHOT POWER
+                    {t('hud.stepPower', 'SHOT POWER')}
                   </h3>
                 </div>
                 <span
@@ -8860,9 +8864,9 @@ export default function Stadium3DView({
 
               {/* Labels under the bar */}
               <div className="flex justify-between items-center px-1 mt-1 text-[9px] sm:text-[9.5px] font-black text-slate-700 uppercase tracking-wider">
-                <span>WEAK</span>
-                <span className="text-amber-600">SWEET SPOT</span>
-                <span>MAX</span>
+                <span>{t('hud.weak', 'WEAK')}</span>
+                <span className="text-amber-600">{t('hud.sweetSpot', 'SWEET SPOT')}</span>
+                <span>{t('hud.max', 'MAX')}</span>
               </div>
 
               {/* Action Button to Strike */}
@@ -8874,7 +8878,7 @@ export default function Stadium3DView({
                 className="w-full flex items-center justify-center gap-1.5 bg-gradient-to-r from-emerald-400 via-amber-300 to-amber-400 hover:from-emerald-300 hover:to-amber-300 active:scale-95 text-black py-1.5 px-2.5 rounded-[12px] border-[2px] border-black shadow-[0_2px_0_0_#000] font-black text-[10px] sm:text-xs uppercase tracking-wider cursor-pointer transition-all mt-1.5"
               >
                 <Zap className="w-3.5 h-3.5 text-black shrink-0 fill-black" />
-                <span>RELEASE TO STRIKE!</span>
+                <span>{t('hud.tapToKick', 'RELEASE TO STRIKE!')}</span>
               </button>
 
               {/* Live Status Text */}
@@ -8882,7 +8886,7 @@ export default function Stadium3DView({
                 ref={powerStatusTextRef}
                 className="text-center text-[8px] sm:text-[8.5px] font-black text-slate-500 uppercase tracking-tight mt-1"
               >
-                CHARGING POWER...
+                {t('hud.chargingPower', 'CHARGING POWER...')}
               </div>
             </motion.div>
           ) : null}
@@ -8910,32 +8914,19 @@ export default function Stadium3DView({
               setShowExitModal(true);
             }}
             className="flex items-center gap-1.5 sm:gap-2 bg-rose-500 hover:bg-rose-400 active:scale-95 text-white px-3 py-1.5 sm:px-3.5 sm:py-2 md:px-4 md:py-2.5 rounded-[12px] sm:rounded-[15px] md:rounded-[18px] border-[2.5px] sm:border-[3px] md:border-[3px] border-black shadow-[0_3px_0_0_#000] sm:shadow-[0_4px_0_0_#000] md:shadow-[0_5px_0_0_#000] font-black text-[10px] sm:text-xs md:text-xs uppercase tracking-wider cursor-pointer transition-all select-none"
-            title={
-              isPracticeMode
-                ? "Exit training drills and return to main menu"
-                : isWorldCupMatch
-                ? "Forfeit World Cup match"
-                : isWagerMatch
-                ? "Surrender coin wager"
-                : isSurvival
-                ? "End survival run"
-                : isOnlineMatch
-                ? "Leave online match"
-                : "Exit game and return to main menu"
-            }
           >
             <span>
               {isPracticeMode
-                ? 'EXIT TRAINING'
+                ? t('practice.exitButton', 'EXIT TRAINING')
                 : isWorldCupMatch
-                ? 'FORFEIT MATCH'
+                ? t('tournament.forfeitMatch', 'FORFEIT MATCH')
                 : isWagerMatch
-                ? 'FORFEIT WAGER'
+                ? t('wager.forfeitWager', 'FORFEIT WAGER')
                 : isSurvival
-                ? 'END SURVIVAL'
+                ? t('survival.endSurvival', 'END SURVIVAL')
                 : isOnlineMatch
-                ? 'LEAVE MATCH'
-                : 'EXIT GAME'}
+                ? t('online.leaveMatch', 'LEAVE MATCH')
+                : t('hud.exitMatch', 'EXIT GAME')}
             </span>
           </button>
         </div>
@@ -8947,56 +8938,56 @@ export default function Stadium3DView({
           const config = (() => {
             if (isWorldCupMatch) {
               return {
-                badge: '🏆 FIFA WORLD CUP',
+                badge: `🏆 ${t('menu.worldCup', 'FIFA WORLD CUP')}`,
                 badgeColor: 'bg-amber-400 text-black',
-                title: 'FORFEIT MATCH?',
-                subtitle: 'Leaving now counts as an automatic defeat.',
-                confirmText: 'FORFEIT',
+                title: t('modal.forfeitMatchTitle', 'FORFEIT MATCH?'),
+                subtitle: t('modal.forfeitMatchSub', 'Leaving now counts as an automatic defeat.'),
+                confirmText: t('modal.forfeit', 'FORFEIT'),
               };
             }
             if (isWagerMatch) {
               const prizePot = (onlineMatchRoom?.prizePot || wagerPrizePot || 0);
               return {
-                badge: `⚔️ COIN WAGER • ${prizePot.toLocaleString()}`,
+                badge: `⚔️ ${t('wager.duel', 'COIN WAGER')} • ${prizePot.toLocaleString()}`,
                 badgeColor: 'bg-yellow-400 text-black',
-                title: 'SURRENDER WAGER?',
-                subtitle: `Forfeiting will surrender your ${wagerEntryFee.toLocaleString()} coin stake.`,
-                confirmText: 'SURRENDER',
+                title: t('wager.surrenderTitle', 'SURRENDER WAGER?'),
+                subtitle: `${t('wager.surrenderSub', 'Forfeiting will surrender your stake:')} ${wagerEntryFee.toLocaleString()} ${t('common.coins', 'COINS')}`,
+                confirmText: t('wager.surrender', 'SURRENDER'),
               };
             }
             if (isSurvival) {
               return {
-                badge: '🔥 SURVIVAL ARENA',
+                badge: `🔥 ${t('survival.streak', 'SURVIVAL ARENA')}`,
                 badgeColor: 'bg-rose-500 text-white',
-                title: 'END SURVIVAL?',
-                subtitle: `Current streak: ${survivalStreak} shots. Run will conclude immediately.`,
-                confirmText: 'END RUN',
+                title: t('survival.endSurvivalTitle', 'END SURVIVAL?'),
+                subtitle: `${t('survival.currentStreak', 'Current streak:')} ${survivalStreak} ${t('common.goals', 'goals')}. ${t('survival.concludeSub', 'Run will conclude immediately.')}`,
+                confirmText: t('survival.endRun', 'END RUN'),
               };
             }
             if (isOnlineMatch) {
               return {
-                badge: '⚡ ONLINE DUEL',
+                badge: `⚡ ${t('online.matchTitle', 'ONLINE DUEL')}`,
                 badgeColor: 'bg-cyan-400 text-black',
-                title: 'LEAVE MATCH?',
-                subtitle: 'Disconnecting will award a forfeit win to your opponent.',
-                confirmText: 'LEAVE',
+                title: t('online.leaveMatchTitle', 'LEAVE MATCH?'),
+                subtitle: t('online.leaveMatchSub', 'Disconnecting will award a forfeit win to your opponent.'),
+                confirmText: t('online.leave', 'LEAVE'),
               };
             }
             if (isPracticeMode) {
               return {
-                badge: '🎯 PRACTICE DRILLS',
+                badge: `🎯 ${t('menu.practice', 'PRACTICE DRILLS')}`,
                 badgeColor: 'bg-emerald-400 text-black',
-                title: 'EXIT TRAINING?',
-                subtitle: 'Return to the main menu at any time.',
-                confirmText: 'EXIT',
+                title: t('practice.exitTitle', 'EXIT TRAINING?'),
+                subtitle: t('practice.exitSub', 'Return to the main menu at any time.'),
+                confirmText: t('common.exit', 'EXIT'),
               };
             }
             return {
-              badge: '⚽ QUICK MATCH',
+              badge: `⚽ ${t('menu.quickPlay', 'QUICK MATCH')}`,
               badgeColor: 'bg-sky-400 text-black',
-              title: 'QUIT MATCH?',
-              subtitle: 'Current match progress will not be saved.',
-              confirmText: 'QUIT',
+              title: t('hud.exitMatch', 'QUIT MATCH?'),
+              subtitle: t('modal.quitMatchSub', 'Current match progress will not be saved.'),
+              confirmText: t('common.quit', 'QUIT'),
             };
           })();
 
@@ -9040,7 +9031,7 @@ export default function Stadium3DView({
                     onClick={() => setShowExitModal(false)}
                     className="py-2.5 px-3 rounded-[14px] bg-slate-100 hover:bg-slate-200 active:scale-95 text-black font-black text-xs uppercase tracking-wider border-[2.5px] border-black shadow-[0_3px_0_0_#000] cursor-pointer transition-all"
                   >
-                    CONTINUE
+                    {t('btn.continue', 'CONTINUE')}
                   </button>
                   <button
                     onClick={() => {

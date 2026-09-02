@@ -21,6 +21,7 @@ import { MatchStats } from './MatchResultsPage';
 import LazyFlagImage from './LazyFlagImage';
 import CoinIcon from './CoinIcon';
 import { getStickerAvatarUrl } from '../data/botProfiles';
+import { useTranslation } from '../utils/i18n';
 
 interface WagerResultsPageProps {
   country: Country;
@@ -60,6 +61,7 @@ export default function WagerResultsPage({
   onReturnToMenu,
   onReturnToWagerArena,
 }: WagerResultsPageProps) {
+  const { t } = useTranslation();
   const [rematchStatus, setRematchStatus] = useState<'idle' | 'requesting' | 'received_invitation' | 'accepted' | 'declined'>('idle');
   const [rematchNotice, setRematchNotice] = useState<string | null>(null);
   const isBotOpponent = onlineMatchManager.isCurrentRoomBotMatch() || Boolean(
@@ -204,7 +206,7 @@ export default function WagerResultsPage({
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-base sm:text-xl md:text-2xl font-black uppercase tracking-wider text-black drop-shadow-xs">
-                {tierInfo.name} Wager
+                {tierInfo.name} {t('mode.wager', 'WAGER')}
               </h1>
               <span className="bg-black text-amber-300 font-black text-[10px] sm:text-xs px-2.5 py-0.5 rounded-full uppercase tracking-wider">
                 {tierInfo.badge}
@@ -212,8 +214,8 @@ export default function WagerResultsPage({
             </div>
             <p className="text-[10px] sm:text-xs text-slate-900 font-black uppercase tracking-wider">
               {isOpponentOffline
-                ? 'Opponent Disconnected • Wager Match Results'
-                : `Room #${onlineMatchRoom?.roomId || onlineMatchManager.currentRoom?.roomId || 'WAGER'} • Coin Duel Results`}
+                ? `${t('status.disconnected', 'Opponent Disconnected')} • ${t('result.wagerResults', 'Wager Match Results')}`
+                : `Room #${onlineMatchRoom?.roomId || onlineMatchManager.currentRoom?.roomId || 'WAGER'} • ${t('wager.coinDuelResults', 'Coin Duel Results')}`}
             </p>
           </div>
         </div>
@@ -222,12 +224,12 @@ export default function WagerResultsPage({
         {isOpponentOffline ? (
           <span className="px-2.5 py-1 rounded-full bg-rose-500 border-2 border-black text-[10px] sm:text-xs font-black uppercase tracking-wider text-white shadow-[0_2px_0_0_#000] flex items-center gap-1.5 shrink-0">
             <WifiOff className="w-3.5 h-3.5 text-white" />
-            <span className="hidden sm:inline">OFFLINE</span>
+            <span className="hidden sm:inline">{t('status.offline', 'OFFLINE')}</span>
           </span>
         ) : (
           <span className="px-2.5 py-1 rounded-full bg-emerald-400 border-2 border-black text-[10px] sm:text-xs font-black uppercase tracking-wider text-black shadow-[0_2px_0_0_#000] flex items-center gap-1.5 shrink-0">
             <Wifi className="w-3.5 h-3.5 text-black" />
-            <span className="hidden sm:inline">LIVE</span>
+            <span className="hidden sm:inline">{t('status.live', 'LIVE')}</span>
           </span>
         )}
       </header>
@@ -243,7 +245,7 @@ export default function WagerResultsPage({
           >
             <WifiOff className="w-5 h-5 shrink-0 text-white stroke-[2.5]" />
             <span className="font-black text-xs sm:text-sm uppercase tracking-wider">
-              Opponent disconnected or left the wager room
+              {t('wager.opponentLeft', 'Opponent disconnected or left the wager room')}
             </span>
           </motion.div>
         )}
@@ -270,10 +272,10 @@ export default function WagerResultsPage({
                 <Crown className="w-6 h-6 text-black shrink-0 animate-bounce" />
                 <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
                   <span className="text-xl sm:text-2xl font-black uppercase tracking-tight">
-                    WAGER VICTORY!
+                    {t('wager.victory', 'WAGER VICTORY!')}
                   </span>
                   <span className="text-xs sm:text-sm font-black uppercase bg-black text-emerald-300 px-2.5 py-0.5 rounded-full inline-block">
-                    +{prizePot.toLocaleString()} COINS
+                    +{prizePot.toLocaleString()} {t('currency.coins', 'COINS')}
                   </span>
                 </div>
               </>
@@ -281,7 +283,7 @@ export default function WagerResultsPage({
               <>
                 <Shield className="w-6 h-6 text-black shrink-0" />
                 <span className="text-xl sm:text-2xl font-black uppercase tracking-tight">
-                  MATCH DRAW • FEE REFUNDED
+                  {t('wager.drawRefunded', 'MATCH DRAW • FEE REFUNDED')}
                 </span>
               </>
             ) : (
@@ -289,10 +291,10 @@ export default function WagerResultsPage({
                 <AlertTriangle className="w-6 h-6 text-white shrink-0" />
                 <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
                   <span className="text-xl sm:text-2xl font-black uppercase tracking-tight">
-                    DEFEATED
+                    {t('result.defeat', 'DEFEATED')}
                   </span>
                   <span className="text-xs sm:text-sm font-black uppercase bg-black/40 text-rose-100 px-2.5 py-0.5 rounded-full inline-block">
-                    -{entryFee.toLocaleString()} COINS
+                    -{entryFee.toLocaleString()} {t('currency.coins', 'COINS')}
                   </span>
                 </div>
               </>
@@ -375,7 +377,7 @@ export default function WagerResultsPage({
             {/* Entry Fee */}
             <div className="bg-slate-50 border-[1.5px] border-black rounded-[12px] p-2 flex flex-col items-center justify-center">
               <span className="text-[10px] font-black text-slate-500 uppercase">
-                Entry Fee
+                {t('wager.entryFee', 'Entry Fee')}
               </span>
               <div className="flex items-center gap-1 mt-0.5">
                 <CoinIcon className="w-3.5 h-3.5" />
@@ -388,7 +390,7 @@ export default function WagerResultsPage({
             {/* Total Arena Pot */}
             <div className="bg-amber-100 border-[1.5px] border-black rounded-[12px] p-2 flex flex-col items-center justify-center">
               <span className="text-[10px] font-black text-amber-900 uppercase">
-                Arena Pot
+                {t('wager.arenaPot', 'Arena Pot')}
               </span>
               <div className="flex items-center gap-1 mt-0.5">
                 <CoinIcon className="w-3.5 h-3.5" />
@@ -409,7 +411,7 @@ export default function WagerResultsPage({
               }`}
             >
               <span className="text-[10px] font-black text-slate-500 uppercase">
-                Net Result
+                {t('wager.netResult', 'Net Result')}
               </span>
               <div className="flex items-center gap-1 mt-0.5">
                 <CoinIcon className="w-3.5 h-3.5" />
@@ -445,7 +447,7 @@ export default function WagerResultsPage({
               <div className="flex items-center gap-2.5 min-w-0">
                 <Flame className="w-5 h-5 text-black shrink-0 animate-pulse" />
                 <span className="font-black text-xs sm:text-sm uppercase truncate">
-                  {oppPlayerName} challenges you to a Wager Rematch!
+                  {oppPlayerName} {t('rematch.wagerChallenge', 'challenges you to a Wager Rematch!')}
                 </span>
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -453,13 +455,13 @@ export default function WagerResultsPage({
                   onClick={handleAcceptRematch}
                   className="px-3 py-1.5 rounded-[10px] bg-emerald-400 hover:bg-emerald-300 border-[2px] border-black font-black text-xs uppercase cursor-pointer shadow-xs active:scale-95"
                 >
-                  Accept
+                  {t('rematch.accept', 'Accept')}
                 </button>
                 <button
                   onClick={handleDeclineRematch}
                   className="px-3 py-1.5 rounded-[10px] bg-rose-400 hover:bg-rose-300 border-[2px] border-black font-black text-xs uppercase cursor-pointer shadow-xs active:scale-95"
                 >
-                  Decline
+                  {t('rematch.decline', 'Decline')}
                 </button>
               </div>
             </motion.div>
@@ -490,12 +492,12 @@ export default function WagerResultsPage({
             {rematchStatus === 'requesting' ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>WAITING FOR OPPONENT...</span>
+                <span>{t('match.waitingOpponent', 'WAITING FOR OPPONENT...')}</span>
               </>
             ) : (
               <>
                 <RotateCcw className="w-4 h-4" />
-                <span>WAGER REMATCH</span>
+                <span>{t('wager.rematch', 'WAGER REMATCH')}</span>
               </>
             )}
           </motion.button>
@@ -508,7 +510,7 @@ export default function WagerResultsPage({
               className="w-full sm:w-auto py-3 px-5 rounded-[18px] border-[3px] border-black shadow-[0_4px_0_0_#000] font-black text-xs sm:text-sm uppercase tracking-wider bg-white hover:bg-slate-50 text-black flex items-center justify-center gap-2 cursor-pointer transition-all"
             >
               <Swords className="w-4 h-4" />
-              <span>WAGER ARENA</span>
+              <span>{t('wager.arena', 'WAGER ARENA')}</span>
             </motion.button>
           )}
 
@@ -519,7 +521,7 @@ export default function WagerResultsPage({
             className="w-full sm:w-auto py-3 px-5 rounded-[18px] border-[3px] border-black shadow-[0_4px_0_0_#000] font-black text-xs sm:text-sm uppercase tracking-wider bg-slate-900 hover:bg-slate-800 text-white border-black flex items-center justify-center gap-2 cursor-pointer transition-all"
           >
             <Home className="w-4 h-4" />
-            <span>MAIN MENU</span>
+            <span>{t('btn.returnMenu', 'MAIN MENU')}</span>
           </motion.button>
         </div>
       </main>
