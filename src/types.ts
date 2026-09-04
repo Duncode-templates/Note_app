@@ -1,8 +1,54 @@
-export type MenuItemId = 'quick_play' | 'tournament' | 'survival' | 'wager_arena' | 'practice' | 'shop';
+export type MenuItemId = 'quick_play' | 'tournament' | 'survival' | 'wager_arena' | 'king_of_the_hill' | 'practice' | 'shop';
 
-export type GameMode = 'match' | 'free_kick_training' | 'penalty_training' | 'survival' | 'division_match';
+export type GameMode = 'match' | 'free_kick_training' | 'penalty_training' | 'survival' | 'division_match' | 'king_of_the_hill';
 
 export type SuperpowerType = 'fireball' | 'laser_aim' | 'tornado' | 'thunderbolt' | null;
+
+export type KingShotOutcome = 'goal' | 'save' | 'post' | 'miss';
+
+export interface KingOfTheHillContender {
+  id: string;
+  name: string;
+  countryCode: string;
+  countryName: string;
+  avatarUrl?: string | null;
+  isLocalPlayer: boolean;
+  isBot?: boolean;
+  isEliminated: boolean;
+  eliminatedInRound?: number;
+  currentRoundScore: number;
+  currentRoundGoals: number; // goals scored in current round (0 to 5)
+  currentRoundShots: KingShotOutcome[]; // shots taken in current round (up to 5)
+  currentRoundOutcome: 'waiting' | 'aiming' | 'shooting' | 'goal' | 'save' | 'post' | 'miss';
+  currentRoundDetails?: string;
+  roundScores: number[]; // points in each round [r1, r2, ...]
+  roundGoals: number[]; // goals in each round [r1, r2, ...]
+  roundOutcomes: KingShotOutcome[];
+  totalScore: number;
+  totalGoals: number;
+  rank?: number;
+}
+
+export interface KingOfTheHillMatchState {
+  matchId: string;
+  playerCount: 4;
+  currentRound: number; // 1, 2, 3, 4
+  totalRounds: number;
+  wagerTier?: 'free' | 'rookie' | 'pro' | 'champion';
+  entryFee: number;
+  prizePot: number;
+  contenders: KingOfTheHillContender[];
+  roundTimeLeft: number;
+  status: 'matchmaking' | 'round_active' | 'round_elimination' | 'champion_crowned';
+  positionIndex: number;
+  roundPositions?: number[]; // 5 distinct random free kick positions for this round (1 per ball)
+  roundTitle: string;
+  roundDescription: string;
+  eliminatedCountThisRound: number;
+  activeContenderId?: string; // which contender is currently taking their turn
+  activeShotIndex?: number; // 0 to 4 (shot 1 to 5)
+}
+
 
 export interface MenuItem {
   id: MenuItemId;
@@ -51,7 +97,7 @@ export interface OnlineMatchRoom {
   roomId: string;
   host: OnlinePlayer;
   guest?: OnlinePlayer | null;
-  gameMode: 'match' | 'penalty_training' | 'survival' | 'division_match';
+  gameMode: 'match' | 'penalty_training' | 'survival' | 'division_match' | 'king_of_the_hill';
   division?: number;
   wagerTier?: 'rookie' | 'pro' | 'champion' | 'legend';
   entryFee?: number;
@@ -76,6 +122,10 @@ export interface OnlineMatchRoom {
   rematchRequestedBy?: 'host' | 'guest' | null;
   isOpponentDisconnected?: boolean;
   isMatchmaking?: boolean;
+  isPublic?: boolean;
+  maxPlayers?: number;
+  players?: OnlinePlayer[];
+  kothState?: KingOfTheHillMatchState;
   isBotMatch?: boolean;
   botProfileId?: string;
 }
@@ -95,6 +145,10 @@ export interface OnlineShotPayload {
   gkFlawOffset?: number;
   gkGambleSide?: number;
   timestamp?: number;
+  shotId?: string;
+  initialVelocity?: [number, number, number];
+  shotGravity?: number;
+  curveAccelMag?: number;
 }
 
 export interface OnlineShotOutcomePayload {

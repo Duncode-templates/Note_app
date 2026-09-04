@@ -525,12 +525,12 @@ export function recordDivisionMatchResult(
   let seasonStatus: DivisionState['seasonStatus'] = 'in_progress';
   let pendingSeasonReward: DivisionState['pendingSeasonReward'] = null;
   let eventMessage = isWin
-    ? 'Victory! +3 Points • +10 🪙'
+    ? 'Victory! +3 Points • +10 Coins'
     : isDraw
-    ? 'Draw! +1 Point • 0 🪙'
+    ? 'Draw! +1 Point • 0 Coins'
     : lossPenalty > 0
-    ? `Defeat! -${lossPenalty} Points • 0 🪙`
-    : 'Defeat! +0 Points • 0 🪙';
+    ? `Defeat! -${lossPenalty} Points • 0 Coins`
+    : 'Defeat! +0 Points • 0 Coins';
 
   const isTitleWon = newPoints >= tier.pointsForTitle;
   const isTransferEarned = newPoints >= tier.pointsToTransfer && prevState.currentDivision > 1;
@@ -551,7 +551,7 @@ export function recordDivisionMatchResult(
       coins: tier.coinRewardTitle,
       newDivision: nextDiv,
     };
-    eventMessage = `🏆 Title Won! Promoted to ${nextTier.name}!`;
+    eventMessage = `Title Won! Promoted to ${nextTier.name}!`;
   } else if (isTransferEarned) {
     seasonStatus = 'promoted';
     const nextDiv = Math.max(1, prevState.currentDivision - 1);
@@ -566,7 +566,7 @@ export function recordDivisionMatchResult(
       coins: tier.coinRewardPromotion,
       newDivision: nextDiv,
     };
-    eventMessage = `🚀 Promotion Achieved! Welcome to ${nextTier.name}!`;
+    eventMessage = `Promotion Achieved! Welcome to ${nextTier.name}!`;
   } else if (isSeasonOver) {
     // Season ended without early promotion
     if (prevState.currentDivision < 8 && newPoints < tier.pointsForSafety) {
@@ -581,7 +581,7 @@ export function recordDivisionMatchResult(
         coins: 50,
         newDivision: demotedDiv,
       };
-      eventMessage = `⚠️ Relegated to ${demotedTier.name}. Fight back next season!`;
+      eventMessage = `Relegated to ${demotedTier.name}. Fight back next season!`;
     } else {
       // Held in same division
       seasonStatus = 'held';

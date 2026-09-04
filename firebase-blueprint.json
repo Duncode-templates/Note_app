@@ -26,6 +26,10 @@
         },
         "rematchRequestedBy": { "type": "string", "description": "Player role requesting rematch" },
         "isOpponentDisconnected": { "type": "boolean", "description": "True if one peer has disconnected" },
+        "isPublic": { "type": "boolean", "description": "Whether room is listed in public rooms browser" },
+        "maxPlayers": { "type": "number", "description": "Maximum contenders for this room (e.g. 4 for KOTH)" },
+        "players": { "type": "array", "description": "All contenders currently in the room lobby or match" },
+        "kothState": { "type": "object", "description": "King of the Hill synchronized tournament state" },
         "updatedAt": { "type": "number", "description": "Last update timestamp" }
       },
       "required": ["roomId", "status", "host"]

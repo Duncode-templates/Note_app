@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Wifi, WifiOff, RotateCcw, Users, User, Search, Check, X, AlertTriangle, Loader2, Heart, Flame } from 'lucide-react';
+import { Wifi, WifiOff, RotateCcw, Users, User, Search, Check, X, AlertTriangle, Loader2, Heart, Flame, Trophy } from 'lucide-react';
 import { Country, getFlagUrl, getCountryAbbr, COUNTRIES_DATA } from '../data/countries';
 import { CompletedRoundData } from '../data/tournamentData';
 import { OnlineMatchRoom } from '../types';
@@ -297,7 +297,7 @@ export default function MatchResultsPage({
               )
             ) : (
               <div className="w-full h-full rounded-full bg-amber-400 border-2 border-black flex items-center justify-center text-black font-black text-xl shadow-[0_2px_0_0_#000]">
-                ★
+                <Trophy className="w-5 h-5 text-black" />
               </div>
             )}
           </div>
@@ -376,7 +376,7 @@ export default function MatchResultsPage({
               exit={{ y: -20, opacity: 0 }}
               className="w-full max-w-md bg-amber-300 border-[3px] border-black rounded-full px-5 py-2 shadow-[0_4px_0_0_#000] text-black font-black text-xs sm:text-sm uppercase tracking-wider text-center"
             >
-              ⚡ {teamChangeAlert}
+              {teamChangeAlert}
             </motion.div>
           )}
         </AnimatePresence>
@@ -413,16 +413,16 @@ export default function MatchResultsPage({
           >
             {hasPenalties
               ? isPlayerWinner
-                ? `★ ${t('result.wonOnPenalties', 'WON ON PENALTIES')} (${effectiveHomePen}-${effectiveAwayPen})! ★`
+                ? `${t('result.wonOnPenalties', 'WON ON PENALTIES')} (${effectiveHomePen}-${effectiveAwayPen})!`
                 : `${t('result.lostOnPenalties', 'LOST ON PENALTIES')} (${effectiveHomePen}-${effectiveAwayPen})`
               : isSurvival
               ? isPlayerWinner
-                ? `★ ${t('result.survivalVictory', 'SURVIVAL VICTORY!')} ★`
+                ? t('result.survivalVictory', 'SURVIVAL VICTORY!')
                 : isDraw
                 ? t('result.draw', 'HONOURS EVEN (TIE)')
                 : t('result.survivalDefeat', 'SURVIVAL DEFEAT')
               : isPlayerWinner
-              ? `★ ${t('result.victory', 'MATCH VICTORY!')} ★`
+              ? t('result.victory', 'MATCH VICTORY!')
               : isDraw
               ? t('result.draw', 'HONOURS EVEN (DRAW)')
               : t('result.defeat', 'MATCH DEFEAT')}
@@ -586,7 +586,7 @@ export default function MatchResultsPage({
               <div className="flex items-center gap-1.5 px-3 py-1 bg-amber-100 border border-black rounded-full shadow-2xs">
                 <span className="font-black text-black">{t('division.reward', 'Division Reward')}:</span>
                 <span className="font-black text-amber-900 font-mono">
-                  {isPlayerWinner ? '+3 PTS • +10 🪙' : isDraw ? '+1 PT • 0 🪙' : '0 🪙 (Ranked Loss Penalty)'}
+                  {isPlayerWinner ? '+3 PTS • +10 COINS' : isDraw ? '+1 PT • 0 COINS' : '0 COINS (Ranked Loss Penalty)'}
                 </span>
               </div>
             )}
@@ -603,7 +603,7 @@ export default function MatchResultsPage({
           >
             <div className="flex items-center justify-between mb-4 pb-2 border-b-2 border-black/10">
               <div className="flex items-center gap-2">
-                <span className="text-amber-500 font-black text-lg">★</span>
+                <Trophy className="w-4 h-4 text-amber-500" />
                 <h3 className="font-black text-sm sm:text-base uppercase tracking-wider text-black">
                   OTHER ROUND FIXTURES &amp; RESULTS ({otherMatches.length} MATCHES)
                 </h3>
@@ -770,7 +770,7 @@ export default function MatchResultsPage({
               className="bg-white border-[4px] border-black rounded-[32px] p-6 sm:p-8 max-w-md w-full shadow-[0_12px_0_0_#000] text-black relative flex flex-col items-center text-center gap-5"
             >
               <div className="w-16 h-16 rounded-full bg-amber-400 border-[3.5px] border-black flex items-center justify-center text-2xl font-black shadow-sm animate-bounce">
-                ★
+                <RotateCcw className="w-8 h-8 text-black" />
               </div>
 
               <div className="flex flex-col gap-1.5">

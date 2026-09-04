@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Play, Trash2, Bookmark, Flame, User, Check, Video, AlertCircle } from 'lucide-react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faFutbol } from '@fortawesome/free-solid-svg-icons';
 import { SavedReplay } from '../types';
 import { savedReplayManager } from '../utils/savedReplayManager';
 import { getFlagUrl } from '../data/countries';
@@ -16,6 +18,7 @@ interface UserProfileModalProps {
   coins: number;
   bestSurvivalStreak: number;
   onPlayReplay: (replay: SavedReplay) => void;
+  onPracticeMatch?: () => void;
 }
 
 export default function UserProfileModal({
@@ -26,6 +29,7 @@ export default function UserProfileModal({
   coins,
   bestSurvivalStreak,
   onPlayReplay,
+  onPracticeMatch,
 }: UserProfileModalProps) {
   const { t } = useTranslation();
   const [replays, setReplays] = useState<SavedReplay[]>(() => savedReplayManager.getReplays());
@@ -141,6 +145,35 @@ export default function UserProfileModal({
               </span>
             </div>
           </div>
+
+          {/* Play Practice Match Bar */}
+          {onPracticeMatch && (
+            <div className="p-3 sm:p-3.5 bg-amber-400/95 border-b-[2.5px] border-black flex items-center justify-between gap-3 text-black">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-[10px] bg-white border-[2px] border-black flex items-center justify-center shrink-0">
+                  <FontAwesomeIcon icon={faFutbol} className="text-base text-black" />
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-black truncate">
+                    {t('menu.practice', 'PRACTICE MATCH')}
+                  </span>
+                  <span className="text-[10px] text-slate-800 font-bold truncate">
+                    {t('practice.bannerDesc', 'Hone free kicks & penalty drills')}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  onClose();
+                  onPracticeMatch();
+                }}
+                className="px-3.5 py-1.5 rounded-[12px] bg-white hover:bg-slate-100 active:scale-95 text-black font-black text-xs uppercase tracking-wider border-[2px] border-black shadow-[0_2px_0_0_#000] cursor-pointer flex items-center gap-1.5 shrink-0 transition-all"
+              >
+                <Play className="w-3.5 h-3.5 fill-black" />
+                <span>{t('practice.playPractice', 'PLAY')}</span>
+              </button>
+            </div>
+          )}
 
           {/* Replays Section Content */}
           <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2.5 custom-scrollbar">

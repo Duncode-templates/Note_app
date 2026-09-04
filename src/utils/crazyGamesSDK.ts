@@ -16,7 +16,38 @@ import {
   unmuteCrazyGamesAudio,
   muteAllAudio,
   unmuteAllAudio,
+  setCrazyGamesSdkMuteState,
+  setCrazyGamesSdkVolume,
+  getCrazyGamesSdkVolume,
+  setUserMuteState,
+  toggleUserMuteState,
+  isEffectivelyMuted,
+  isUserMuted,
+  isSdkMuted,
+  subscribeAudioMuteState,
 } from './mediaPreloader';
+
+export {
+  muteCrazyGamesAudio,
+  unmuteCrazyGamesAudio,
+  muteAllAudio,
+  unmuteAllAudio,
+  setCrazyGamesSdkMuteState,
+  setCrazyGamesSdkVolume,
+  getCrazyGamesSdkVolume,
+  setUserMuteState,
+  toggleUserMuteState,
+  isEffectivelyMuted,
+  isUserMuted,
+  isSdkMuted,
+  subscribeAudioMuteState,
+};
+
+export interface CrazyGamesSettings {
+  muteAudio?: boolean;
+  volume?: number;
+  [key: string]: any;
+}
 
 export interface CrazyGamesUser {
   id?: string;
@@ -60,6 +91,13 @@ declare global {
           showInviteButton: (params?: Record<string, string>) => void;
           hideInviteButton: () => void;
           showAuthPrompt: () => Promise<CrazyGamesUser | null>;
+          settings?: CrazyGamesSettings;
+          addSettingsChangeListener?: (listener: (settings: CrazyGamesSettings) => void) => () => void;
+          removeSettingsChangeListener?: (listener: (settings: CrazyGamesSettings) => void) => void;
+        };
+        settings?: {
+          muteAudio?: boolean;
+          addSettingsChangeListener?: (listener: (settings: CrazyGamesSettings) => void) => () => void;
         };
         ad?: {
           requestAd: (adType: 'midgame' | 'rewarded', callbacks?: CrazyGamesAdCallbacks) => Promise<void>;
@@ -102,6 +140,8 @@ class CrazyGamesManager {
   private isLoadingActive: boolean = false;
   private currentUser: CrazyGamesUser | null = null;
   private userListeners: Array<(user: CrazyGamesUser | null) => void> = [];
+  private settingsListeners: Array<(settings: CrazyGamesSettings) => void> = [];
+  private isSdkMuteActive: boolean = false;
 
   /**
    * Initializes the CrazyGames SDK v3 safely
@@ -112,6 +152,19 @@ class CrazyGamesManager {
 
     this.initPromise = (async () => {
       try {
+        // Initial URL parameter check for muteAudio
+        if (typeof window !== 'undefined' && window.location) {
+          const urlParams = new URLSearchParams(window.location.search);
+          if (
+            urlParams.get('muteAudio') === 'true' ||
+            urlParams.get('muteAudio') === '1' ||
+            urlParams.get('muted') === 'true'
+          ) {
+            this.isSdkMuteActive = true;
+            setCrazyGamesSdkMuteState(true);
+          }
+        }
+
         // Wait a brief moment if window.CrazyGames is still loading
         if (typeof window !== 'undefined' && !window.CrazyGames?.SDK) {
           for (let i = 0; i < 15; i++) {
@@ -124,10 +177,94 @@ class CrazyGamesManager {
           try {
             await window.CrazyGames.SDK.init();
             this.isInitialized = true;
-            console.log('🎮 [CrazyGames SDK v3] Successfully initialized');
+            console.log('[CrazyGames SDK v3] Successfully initialized');
           } catch (initErr) {
             console.warn('[CrazyGames SDK v3] init() returned notice:', initErr);
             this.isInitialized = true;
+          }
+
+          // Read initial settings from SDK
+          const sdkSettings =
+            window.CrazyGames.SDK.game?.settings ||
+            window.CrazyGames.SDK.settings ||
+            (window.CrazyGames.SDK as any)?.settings;
+
+          if (sdkSettings) {
+            if (typeof sdkSettings.muteAudio === 'boolean') {
+              this.isSdkMuteActive = sdkSettings.muteAudio;
+              setCrazyGamesSdkMuteState(sdkSettings.muteAudio);
+            }
+            if (typeof sdkSettings.volume === 'number') {
+              setCrazyGamesSdkVolume(sdkSettings.volume);
+            }
+          }
+
+          // Register Settings Change Listener for SDK platform-level volume and mute
+          const handleSettingsChange = (newSettings: CrazyGamesSettings) => {
+            if (!newSettings || typeof newSettings !== 'object') return;
+
+            if (typeof newSettings.muteAudio === 'boolean') {
+              this.isSdkMuteActive = newSettings.muteAudio;
+              setCrazyGamesSdkMuteState(newSettings.muteAudio);
+              console.log(`[CrazyGames SDK] Audio mute setting updated: muteAudio=${newSettings.muteAudio}`);
+            }
+
+            if (typeof newSettings.volume === 'number') {
+              setCrazyGamesSdkVolume(newSettings.volume);
+              console.log(`[CrazyGames SDK] Audio volume setting updated: volume=${newSettings.volume}`);
+            }
+
+            this.settingsListeners.forEach((fn) => {
+              try {
+                fn(newSettings);
+              } catch {}
+            });
+          };
+
+          try {
+            if (window.CrazyGames.SDK.game?.addSettingsChangeListener) {
+              window.CrazyGames.SDK.game.addSettingsChangeListener(handleSettingsChange);
+            } else if ((window.CrazyGames.SDK as any)?.addSettingsChangeListener) {
+              (window.CrazyGames.SDK as any).addSettingsChangeListener(handleSettingsChange);
+            } else if (window.CrazyGames.SDK.settings?.addSettingsChangeListener) {
+              window.CrazyGames.SDK.settings.addSettingsChangeListener(handleSettingsChange);
+            }
+          } catch (settingsListenerErr) {
+            console.warn('[CrazyGames SDK] addSettingsChangeListener notice:', settingsListenerErr);
+          }
+
+          // Listen for postMessage settings changes from parent iframe wrapper
+          if (typeof window !== 'undefined') {
+            window.addEventListener('message', (event) => {
+              try {
+                if (event.data && typeof event.data === 'object') {
+                  if (event.data.type === 'crazygames:settingsChange' || event.data.action === 'settingsChange' || event.data.name === 'settingsChange') {
+                    handleSettingsChange(event.data.settings || event.data);
+                  } else if (typeof event.data.muteAudio === 'boolean') {
+                    handleSettingsChange({ muteAudio: event.data.muteAudio });
+                  } else if (typeof event.data.volume === 'number') {
+                    handleSettingsChange({ volume: event.data.volume });
+                  }
+                }
+              } catch {}
+            });
+
+            // Periodic sanity check to sync with CrazyGames platform volume/mute button
+            setInterval(() => {
+              try {
+                const currentSettings =
+                  window.CrazyGames?.SDK?.game?.settings ||
+                  window.CrazyGames?.SDK?.settings ||
+                  (window.CrazyGames?.SDK as any)?.settings;
+                if (currentSettings) {
+                  if (typeof currentSettings.muteAudio === 'boolean' && currentSettings.muteAudio !== this.isSdkMuteActive) {
+                    handleSettingsChange(currentSettings);
+                  } else if (typeof currentSettings.volume === 'number' && Math.abs(currentSettings.volume - getCrazyGamesSdkVolume()) > 0.01) {
+                    handleSettingsChange(currentSettings);
+                  }
+                }
+              } catch {}
+            }, 600);
           }
 
           // Safe trigger loading start now that SDK is initialized
@@ -170,13 +307,13 @@ class CrazyGamesManager {
 
           return true;
         } else {
-          console.log('🎮 [CrazyGames SDK] Operating with integrated fallback engine');
+          console.log('[CrazyGames SDK] Operating with integrated fallback engine');
           this.isInitialized = true;
           await this.migrateLegacyLocalStorage();
           return false;
         }
       } catch (error) {
-        console.warn('🎮 [CrazyGames SDK] Initialization fallback mode active:', error);
+        console.warn('[CrazyGames SDK] Initialization fallback mode active:', error);
         this.isInitialized = true;
         await this.migrateLegacyLocalStorage();
         return false;
@@ -220,9 +357,6 @@ class CrazyGamesManager {
               await window.CrazyGames.SDK.data.setItem(key, val);
             } catch {}
           }
-          try {
-            localStorage.removeItem(key);
-          } catch {}
         }
       }
     } catch (e) {
@@ -747,10 +881,10 @@ class CrazyGamesManager {
     // 1. Update in-memory cache for instant synchronous access
     memoryDataStore.set(key, value);
 
-    // 2. Clean localStorage
+    // 2. Persist to localStorage for reliable local persistence across reloads
     if (typeof window !== 'undefined' && window.localStorage) {
       try {
-        localStorage.removeItem(key);
+        localStorage.setItem(key, value);
       } catch {}
     }
 
@@ -784,6 +918,11 @@ class CrazyGamesManager {
           const cloudVal = await window.CrazyGames.SDK.data.getItem(key);
           if (cloudVal !== null && cloudVal !== undefined) {
             memoryDataStore.set(key, cloudVal);
+            if (typeof window !== 'undefined' && window.localStorage) {
+              try {
+                localStorage.setItem(key, cloudVal);
+              } catch {}
+            }
             return cloudVal;
           }
         }
@@ -797,17 +936,16 @@ class CrazyGamesManager {
       return memoryDataStore.get(key) || null;
     }
 
-    // 3. Check legacy localStorage once, migrate and clear
+    // 3. Check localStorage
     if (typeof window !== 'undefined' && window.localStorage) {
       try {
-        const legacyVal = localStorage.getItem(key);
-        if (legacyVal !== null && legacyVal !== undefined) {
-          memoryDataStore.set(key, legacyVal);
-          localStorage.removeItem(key);
+        const val = localStorage.getItem(key);
+        if (val !== null && val !== undefined) {
+          memoryDataStore.set(key, val);
           if (this.isInitialized && window.CrazyGames?.SDK?.data?.setItem) {
-            window.CrazyGames.SDK.data.setItem(key, legacyVal).catch(() => {});
+            window.CrazyGames.SDK.data.setItem(key, val).catch(() => {});
           }
-          return legacyVal;
+          return val;
         }
       } catch {}
     }
@@ -816,7 +954,7 @@ class CrazyGamesManager {
   }
 
   /**
-   * Synchronous item read from memory cache
+   * Synchronous item read from memory cache or localStorage
    */
   public getItemSync(key: string): string | null {
     if (memoryDataStore.has(key)) {
@@ -824,11 +962,10 @@ class CrazyGamesManager {
     }
     if (typeof window !== 'undefined' && window.localStorage) {
       try {
-        const legacy = localStorage.getItem(key);
-        if (legacy !== null && legacy !== undefined) {
-          memoryDataStore.set(key, legacy);
-          localStorage.removeItem(key);
-          return legacy;
+        const val = localStorage.getItem(key);
+        if (val !== null && val !== undefined) {
+          memoryDataStore.set(key, val);
+          return val;
         }
       } catch {}
     }
@@ -879,6 +1016,55 @@ class CrazyGamesManager {
     } catch (e) {
       console.warn('[CrazyGames SDK Data] clear error:', e);
     }
+  }
+
+  // ==========================================
+  // AUDIO & SETTINGS CONTROL
+  // ==========================================
+
+  /**
+   * Checks whether the game is currently muted (by CrazyGames SDK, ads, user, or tab visibility)
+   */
+  public isAudioMuted(): boolean {
+    return isEffectivelyMuted();
+  }
+
+  /**
+   * Checks if CrazyGames platform has requested audio to be muted
+   */
+  public isPlatformMuted(): boolean {
+    return isSdkMuted();
+  }
+
+  /**
+   * Checks if the user has manually muted audio in the game
+   */
+  public isUserMuted(): boolean {
+    return isUserMuted();
+  }
+
+  /**
+   * Toggle in-game user audio mute state
+   */
+  public toggleMute(): boolean {
+    return toggleUserMuteState();
+  }
+
+  /**
+   * Explicitly set in-game user audio mute state
+   */
+  public setMute(muted: boolean): void {
+    setUserMuteState(muted);
+  }
+
+  /**
+   * Subscribe to SDK settings changes
+   */
+  public addSettingsListener(listener: (settings: CrazyGamesSettings) => void): () => void {
+    this.settingsListeners.push(listener);
+    return () => {
+      this.settingsListeners = this.settingsListeners.filter((fn) => fn !== listener);
+    };
   }
 }
 

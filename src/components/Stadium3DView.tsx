@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { motion, AnimatePresence } from 'motion/react';
-import { Clock, Play, Pause, RotateCcw, FastForward, Camera, Video, Compass, Bookmark, Check, Bot, Rotate3d, User, Flame, Zap, Sparkles, Target, Heart, Swords, Coins, LogOut } from 'lucide-react';
+import { Clock, Play, Pause, RotateCcw, FastForward, Camera, Video, Compass, Bookmark, Check, Bot, Rotate3d, User, Flame, Zap, Sparkles, Target, Heart, Swords, Coins, LogOut, Crown } from 'lucide-react';
 import { Country, getFlagUrl, getCountryAbbr, COUNTRIES_DATA } from '../data/countries';
 import { getCountryKit, resolveMatchKits, CountryKit } from '../data/countryKits';
 import { getTeamGoalkeeperProfile } from '../data/goalkeeperProfiles';
@@ -53,6 +53,14 @@ interface Stadium3DViewProps {
   equippedPitchId?: string;
   onEarnCoins?: (amount: number) => void;
   savedReplayClip?: SavedReplay | null;
+  forcedPositionIndex?: number;
+  onKingOfTheHillShotComplete?: (isGoal: boolean, outcomeText: string, powerRatio: number, isBullseye: boolean) => void;
+  onLoadingChange?: (isLoading: boolean) => void;
+  forcedTurn?: 'player' | 'ai';
+  kothTurnKey?: string;
+  kothShooterName?: string;
+  kothBallIndex?: number;
+  isKothGameOver?: boolean;
 }
 
 export interface FreeKickPosition {
@@ -229,8 +237,8 @@ const GOAL_COLLISION_SEGMENTS = [
  */
 function getDynamicMaxCurve(powerVal: number): number {
   if (powerVal <= 25) return 0.0;
-  if (powerVal < 50) return 32.0 * Math.pow((powerVal - 25) / 25, 1.25);
-  return 32.0;
+  if (powerVal < 50) return 22.0 * Math.pow((powerVal - 25) / 25, 1.25);
+  return 22.0;
 }
 
 /**
@@ -487,54 +495,17 @@ function getAimTargetSpan(ballZ: number, goalLineZ: number = -42.0): number {
 }
 
 /**
- * Calculates realistic goalkeeper starting position on the goal line.
- * In professional football, goalkeepers position themselves to see the ball past the defensive wall:
- * - If the kick is on the LEFT side (ballX < -1.0), the keeper stands towards the RIGHT (opposite side) ~+1.35m to +2.30m
- * - If the kick is on the RIGHT side (ballX > 1.0), the keeper stands towards the LEFT (opposite side) ~-1.35m to -2.30m
- * - If the kick is CENTRAL (|ballX| <= 1.0) or a PENALTY, the keeper stands in center ~40% of the time, or shaded left/right ~30%/30% of the time.
- * This introduces high realism and creates realistic open goal space for the user to strike!
+ * Calculates goalkeeper starting position on the goal line.
+ * As requested: The goalkeeper should ALWAYS be positioned in the center (0.0).
  */
-export function calculateRealisticGoalkeeperStartX(ballX: number, isPenalty: boolean): number {
-  if (isPenalty) {
-    // In penalties the goalkeeper is positioned strictly in the center of the goal post (0.0)
-    return 0.0;
-  }
-
-  const rng = Math.random();
-  const absX = Math.abs(ballX);
-
-  if (absX >= 1.0) {
-    // Kick from side angle:
-    // Real football tactic: GK guards the far post (opposite side of the defensive wall)
-    const oppositeSign = ballX > 0 ? -1 : 1;
-    
-    if (rng < 0.76) {
-      // Opposite side (far post side, giving striker open space on near side past wall)
-      const offset = 1.35 + Math.random() * 0.95; // 1.35m to 2.30m
-      return oppositeSign * offset;
-    } else if (rng < 0.90) {
-      // Centered stance
-      return (Math.random() - 0.5) * 0.4; // -0.2m to +0.2m
-    } else {
-      // Moderate opposite shade
-      return oppositeSign * (0.8 + Math.random() * 0.5);
-    }
-  } else {
-    // Central free kick:
-    // 40% center, 30% left side, 30% right side
-    if (rng < 0.40) {
-      return (Math.random() - 0.5) * 0.4;
-    } else if (rng < 0.70) {
-      return -1.2 - Math.random() * 0.8; // -1.2m to -2.0m
-    } else {
-      return 1.2 + Math.random() * 0.8;  // +1.2m to +2.0m
-    }
-  }
+export function calculateRealisticGoalkeeperStartX(_ballX: number, _isPenalty: boolean): number {
+  return 0.0;
 }
 
 /**
  * Automatically & Intelligently calculates realistic ball curve (Magnus effect spin)
  * based on goalkeeper positioning, wall location, shot aim progress, power level, and pitch angle.
+ * Tuned with balanced, natural curve physics to prevent excessive swerve.
  */
 function calculateIntelligentCurve(
   aimProgress: number,
@@ -545,7 +516,7 @@ function calculateIntelligentCurve(
   _distance: number = 24,
   fkXOffset: number = 0
 ): number {
-  const MAX_CURVE = 38.0;
+  const MAX_CURVE = 22.0; // Reduced from 38.0 to provide balanced, realistic curl
   // Aim target progress: 0.0 (far left post) to 0.5 (center) to 1.0 (far right post)
   const aimDiff = aimProgress - 0.5; // negative = aiming left, positive = aiming right
   const isAimingLeft = aimDiff < -0.03;
@@ -555,60 +526,58 @@ function calculateIntelligentCurve(
 
   if (isAimingLeft) {
     // Curving into the left side of the net:
-    // Natural inside right-foot curl / banana bend around the wall into the top corner
     const severity = Math.min(1.0, Math.abs(aimDiff) / 0.45);
-    baseCurve = 16.0 + severity * 12.0;
+    baseCurve = 10.0 + severity * 7.0;
 
-    // If wall is positioned on the left side, increase whip to bend cleanly around the outer perimeter of wall
+    // If wall is positioned on the left side
     if (wallX !== undefined && wallX < 0) {
-      baseCurve += 5.0;
+      baseCurve += 2.2;
     }
 
-    // If goalkeeper is guarding the center or right (gkStartX >= -0.4), curving far left beats the keeper's reach
+    // If goalkeeper is guarding the center or right
     if (gkStartX > -0.4) {
-      baseCurve += 4.0;
+      baseCurve += 1.8;
     }
 
-    // When ball starts on right side of pitch curling back into left side (natural inside banana curve)
+    // When ball starts on right side of pitch curling back into left side
     if (fkXOffset > 0.5) {
-      baseCurve += 4.5;
+      baseCurve += 2.0;
     }
   } else if (isAimingRight) {
     // Curving into the right side of the net:
-    // Natural inside left-foot / trivela bend around the wall into the right corner
     const severity = Math.min(1.0, Math.abs(aimDiff) / 0.45);
-    baseCurve = -(16.0 + severity * 12.0);
+    baseCurve = -(10.0 + severity * 7.0);
 
     // If wall is on the right side
     if (wallX !== undefined && wallX > 0) {
-      baseCurve -= 5.0;
+      baseCurve -= 2.2;
     }
 
-    // If keeper is positioned centrally or to the left (gkStartX <= 0.4)
+    // If keeper is positioned centrally or to the left
     if (gkStartX < 0.4) {
-      baseCurve -= 4.0;
+      baseCurve -= 1.8;
     }
 
     // When ball starts on left side of pitch curling back into right side
     if (fkXOffset < -0.5) {
-      baseCurve -= 4.5;
+      baseCurve -= 2.0;
     }
   } else {
     // Center aim: subtle knuckle or bend depending on ball pitch offset
     if (fkXOffset > 2.0) {
-      baseCurve = 8.0;
+      baseCurve = 4.0;
     } else if (fkXOffset < -2.0) {
-      baseCurve = -8.0;
+      baseCurve = -4.0;
     } else {
       baseCurve = 0.0;
     }
   }
 
   // Power-dependent Magnus Aerodynamics:
-  // - Low power (<= 25%): Completely cancelled (0.0 curve) for crisp, direct ground passes to teammates
-  // - Low-to-mid power (26-49%): Progressive curve scaling so short passes stay on target
-  // - Sweet spot zone (62-84%): Maximum aerodynamic Magnus lift, dip, and lateral curl
-  // - Knuckleball / ultra-high power (88-100%): Tight, aggressive, high-velocity trajectory
+  // - Low power (<= 25%): Completely cancelled (0.0 curve) for crisp, direct ground passes
+  // - Low-to-mid power (26-49%): Progressive curve scaling
+  // - Sweet spot zone (62-84%): Natural aerodynamic Magnus lift and lateral curl
+  // - High power (88-100%): Tight, fast-travelling trajectory
   if (power <= 25) {
     return 0.0;
   } else if (power < 50) {
@@ -617,7 +586,7 @@ function calculateIntelligentCurve(
   } else if (power >= 88) {
     baseCurve *= 0.88;
   } else if (power >= 62 && power <= 84) {
-    baseCurve *= 1.15;
+    baseCurve *= 1.10;
   }
 
   return THREE.MathUtils.clamp(baseCurve, -MAX_CURVE, MAX_CURVE);
@@ -654,6 +623,14 @@ export default function Stadium3DView({
   equippedPitchId = 'classic_stripes',
   onEarnCoins,
   savedReplayClip,
+  forcedPositionIndex,
+  onKingOfTheHillShotComplete,
+  onLoadingChange,
+  forcedTurn,
+  kothTurnKey,
+  kothShooterName,
+  kothBallIndex,
+  isKothGameOver = false,
 }: Stadium3DViewProps) {
   const { t } = useTranslation();
   const mountRef = useRef<HTMLDivElement>(null);
@@ -688,6 +665,7 @@ export default function Stadium3DView({
 
   // Mode Detections
   const isSurvival = gameMode === 'survival';
+  const isKingOfTheHill = gameMode === 'king_of_the_hill';
   const isWagerMatch = Boolean(
     onlineMatchRoom?.wagerTier ||
     onlineMatchRoom?.prizePot ||
@@ -804,8 +782,8 @@ export default function Stadium3DView({
     (titleMode?.toLowerCase().includes('custom cup') ?? false)
   );
 
-  // Play-In Feature (15s action countdown): Disabled in Practice and Quick Play Offline, only active in Online matches
-  const isPlayInFeatureActive = !isPracticeMode && isOnlineMatch;
+  // Play-In Feature (10s action countdown): Disabled in Practice and Quick Play Offline, active in Online and King of the Hill matches
+  const isPlayInFeatureActive = !isPracticeMode && (isOnlineMatch || isKingOfTheHill);
 
   // Formats the exact current tournament match stage (e.g. Group Match, Round of 32, Round of 16, Quarter Finals, Semi Finals, Finals)
   const getWorldCupStageLabel = (): string => {
@@ -923,7 +901,9 @@ export default function Stadium3DView({
   }, [isPracticeMode, isPenaltyTraining]);
 
   // Active Position Index (0 to 29)
-  const initialPosIndex = onlineMatchRoom?.positionIndex !== undefined
+  const initialPosIndex = forcedPositionIndex !== undefined
+    ? forcedPositionIndex
+    : onlineMatchRoom?.positionIndex !== undefined
     ? onlineMatchRoom.positionIndex
     : Math.floor(Math.random() * FREE_KICK_POSITIONS.length);
   const [currentPosIndex, setCurrentPosIndex] = useState<number>(initialPosIndex);
@@ -931,6 +911,15 @@ export default function Stadium3DView({
   useEffect(() => {
     currentPosIndexRef.current = currentPosIndex;
   }, [currentPosIndex]);
+
+  useEffect(() => {
+    if (kothTurnKey) return; // KotH coordinates turn transitions via kothTurnKey to prevent duplicate resets
+    if (forcedPositionIndex !== undefined && forcedPositionIndex >= 0 && forcedPositionIndex < FREE_KICK_POSITIONS.length) {
+      const targetPos = FREE_KICK_POSITIONS[forcedPositionIndex];
+      const targetGkStartX = calculateRealisticGoalkeeperStartX(targetPos.xOffset, false);
+      selectPositionIndex(forcedPositionIndex, targetGkStartX);
+    }
+  }, [forcedPositionIndex, kothTurnKey]);
 
   const activePosition = FREE_KICK_POSITIONS[currentPosIndex] || FREE_KICK_POSITIONS[0];
 
@@ -1072,15 +1061,23 @@ export default function Stadium3DView({
   // Free Kick / Penalty Scenario State
   const [fkDistance, setFkDistance] = useState<number>(() => isPenaltyTraining ? PENALTY_DISTANCE : activePosition.distance);
   const [fkXOffset, setFkXOffset] = useState<number>(() => isPenaltyTraining ? 0.0 : activePosition.xOffset);
+  const fkDistanceRef = useRef<number>(isPenaltyTraining ? PENALTY_DISTANCE : activePosition.distance);
+  const fkXOffsetRef = useRef<number>(isPenaltyTraining ? 0.0 : activePosition.xOffset);
+  useEffect(() => {
+    fkDistanceRef.current = fkDistance;
+  }, [fkDistance]);
+  useEffect(() => {
+    fkXOffsetRef.current = fkXOffset;
+  }, [fkXOffset]);
   const [targetCorner, setTargetCorner] = useState<'top-right' | 'top-left' | 'top-center' | 'low-right' | 'low-left'>('top-right');
   const [wallSize, setWallSize] = useState<number>(() => isPenaltyTraining ? 0 : activePosition.wallSize);
 
   // Step State Flow: 'aim' -> 'power' -> 'curve' -> 'kicking' -> 'finished'
   const [setupStep, setSetupStep] = useState<'aim' | 'power' | 'curve' | 'kicking' | 'finished'>('aim');
 
-  // 15s Play-In Timer State & Ref (auto-kicks randomly if user doesn't shoot before 15s)
-  const [playInTimer, setPlayInTimer] = useState<number>(15);
-  const playInTimerRef = useRef<number>(15);
+  // 10s Play-In Timer State & Ref (auto-kicks randomly if user doesn't shoot before 10s)
+  const [playInTimer, setPlayInTimer] = useState<number>(10);
+  const playInTimerRef = useRef<number>(10);
   const [turnEpoch, setTurnEpoch] = useState<number>(0);
   useEffect(() => {
     playInTimerRef.current = playInTimer;
@@ -1089,6 +1086,10 @@ export default function Stadium3DView({
   const MAX_CURVE_LIMIT = 32.0;
   const [aimProgress, setAimProgress] = useState<number>(0.5);
   const [power, setPower] = useState<number>(50);
+  const powerRef = useRef<number>(50);
+  useEffect(() => {
+    powerRef.current = power;
+  }, [power]);
   const [curveAmount, setCurveAmount] = useState<number>(0);
   const [shotOutcome, setShotOutcome] = useState<string | null>(null);
   const [showExitModal, setShowExitModal] = useState<boolean>(false);
@@ -1106,6 +1107,7 @@ export default function Stadium3DView({
     if (savedReplayClip) {
       setLoadingProgress(100);
       setSceneLoading(false);
+      onLoadingChange?.(false);
       crazyGamesSDK.loadingStop();
       crazyGamesSDK.gameplayStart();
 
@@ -1151,6 +1153,7 @@ export default function Stadium3DView({
       };
     }
 
+    onLoadingChange?.(true);
     crazyGamesSDK.loadingStart();
     
     // If this is a Wager Arena match, deduct the entry fee from the user at match start
@@ -1173,6 +1176,7 @@ export default function Stadium3DView({
     // 2.4s loading duration with smooth transition to the first free kick position
     const timer = setTimeout(() => {
       setSceneLoading(false);
+      onLoadingChange?.(false);
       crazyGamesSDK.loadingStop();
       crazyGamesSDK.gameplayStart();
     }, 2400);
@@ -1186,7 +1190,7 @@ export default function Stadium3DView({
 
   // Turn State ('player' | 'ai')
   // In Online Matches: Room Host plays first (Turn 1: 'player' for Host, 'ai' for Guest)
-  const initialTurn = isOnlineMatch ? (isLocalHost ? 'player' : 'ai') : 'player';
+  const initialTurn = isOnlineMatch ? (isLocalHost ? 'player' : 'ai') : (forcedTurn || 'player');
   const [currentTurn, setCurrentTurn] = useState<'player' | 'ai'>(initialTurn);
   const currentTurnRef = useRef<'player' | 'ai'>(initialTurn);
   useEffect(() => {
@@ -1198,6 +1202,32 @@ export default function Stadium3DView({
       slingshotGroupRef.current.visible = currentTurn === 'player' && !isGameOver && !sceneLoading;
     }
   }, [currentTurn, isGameOver, sceneLoading]);
+
+  // Synchronize currentTurn with forcedTurn if provided (used in King of the Hill and turn-based modes)
+  useEffect(() => {
+    if (forcedTurn !== undefined && forcedTurn !== currentTurnRef.current) {
+      setCurrentTurn(forcedTurn);
+      currentTurnRef.current = forcedTurn;
+    }
+  }, [forcedTurn]);
+
+  // When King of the Hill turn key changes, perform a unified clean transition to the next kicker and position
+  const lastKothTurnKeyRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (kothTurnKey && kothTurnKey !== lastKothTurnKeyRef.current) {
+      lastKothTurnKeyRef.current = kothTurnKey;
+      if (forcedTurn !== undefined) {
+        currentTurnRef.current = forcedTurn;
+        setCurrentTurn(forcedTurn);
+      }
+      const targetIndex = forcedPositionIndex !== undefined && forcedPositionIndex >= 0 && forcedPositionIndex < FREE_KICK_POSITIONS.length
+        ? forcedPositionIndex
+        : currentPosIndexRef.current;
+      const targetPos = FREE_KICK_POSITIONS[targetIndex];
+      const targetGkStartX = calculateRealisticGoalkeeperStartX(targetPos.xOffset, false);
+      selectPositionIndex(targetIndex, targetGkStartX, true);
+    }
+  }, [kothTurnKey, forcedTurn, forcedPositionIndex]);
 
   // AI Status State
   const [aiStepStatus, setAiStepStatus] = useState<string>('');
@@ -1245,9 +1275,9 @@ export default function Stadium3DView({
     }
   }, [showExitModal]);
 
-  // 90-Minute Match Timer Progression (Ticks up from 0' to 90'; disabled in practice/training/survival)
+  // 90-Minute Match Timer Progression (Ticks up from 0' to 90'; disabled in practice/training/survival/king of the hill)
   useEffect(() => {
-    if (sceneLoading || isPracticeMode || isSurvival || isGameOver || showExitModal || showResultsModal || isOpponentQuitModalOpen || isPenaltyShootoutRef.current) return;
+    if (sceneLoading || isPracticeMode || isSurvival || isKingOfTheHill || isGameOver || showExitModal || showResultsModal || isOpponentQuitModalOpen || isPenaltyShootoutRef.current) return;
 
     if (isOnlineMatch && !isLocalHost) {
       // GUEST: Ticks forward in sync with host
@@ -1362,11 +1392,13 @@ export default function Stadium3DView({
     // Position ball on 11m penalty spot, clear wall, reset setup
     setFkDistance(PENALTY_DISTANCE);
     setFkXOffset(0.0);
+    fkDistanceRef.current = PENALTY_DISTANCE;
+    fkXOffsetRef.current = 0.0;
     setWallSize(0);
     setCurrentTurn('player');
     currentTurnRef.current = 'player';
     setFreeKickEpoch((prev) => prev + 1);
-    resetToDefaultState();
+    resetToDefaultState(0.0, PENALTY_DISTANCE, 0.0);
   };
 
   // Survival Conclusion: When 100s timer hits 0 or a player/AI loses all lives
@@ -1440,7 +1472,7 @@ export default function Stadium3DView({
 
   // Stoppage / Extra Added Time Handler (When match reaches 90')
   useEffect(() => {
-    if (sceneLoading || isPracticeMode || isSurvival || isGameOver || showExitModal || showResultsModal || isPenaltyShootoutRef.current || isOpponentQuitModalOpen) return;
+    if (sceneLoading || isPracticeMode || isSurvival || isKingOfTheHill || isGameOver || showExitModal || showResultsModal || isPenaltyShootoutRef.current || isOpponentQuitModalOpen) return;
 
     // In online matches, host manages stoppage time calculation and countdown
     if (isOnlineMatch && !isLocalHost) return;
@@ -1494,11 +1526,11 @@ export default function Stadium3DView({
         return () => clearInterval(stoppageInterval);
       }
     }
-  }, [matchTime, stoppageSeconds, homeScore, awayScore, isGameOver, showExitModal, showResultsModal, isOpponentQuitModalOpen, isOnlineMatch, isLocalHost, isSurvival]);
+  }, [matchTime, stoppageSeconds, homeScore, awayScore, isGameOver, showExitModal, showResultsModal, isOpponentQuitModalOpen, isOnlineMatch, isLocalHost, isSurvival, isKingOfTheHill]);
 
   // Robust Watchdog Effect: Ensures match terminates deterministically when time is up without hanging
   useEffect(() => {
-    if (sceneLoading || isPracticeMode || isSurvival || isGameOver || showExitModal || showResultsModal || isPenaltyShootoutRef.current || isOpponentQuitModalOpen) return;
+    if (sceneLoading || isPracticeMode || isSurvival || isKingOfTheHill || isGameOver || showExitModal || showResultsModal || isPenaltyShootoutRef.current || isOpponentQuitModalOpen) return;
 
     const timeIsUp = isTimeExpiredRef.current || (matchTimeRef.current >= 90 && stoppageSecondsRef.current !== null && stoppageCountdownRef.current >= (stoppageSecondsRef.current || 3));
     if (!timeIsUp) return;
@@ -1563,11 +1595,13 @@ export default function Stadium3DView({
       }
 
       const isPlayer = currentTurnRef.current === 'player';
+      const cap = getAiMaxGoalCap();
+      const isAiAtCapAlready = !isPlayer && !isOnlineMatch && !isPracticeMode && awayScoreRef.current >= cap;
 
       const nextPShots = isPlayer && prevOutcome === null ? matchStatsRef.current.playerShots + 1 : matchStatsRef.current.playerShots;
       const nextAiShots = !isPlayer && prevOutcome === null ? matchStatsRef.current.aiShots + 1 : matchStatsRef.current.aiShots;
       const nextPGoals = isPlayer && outcome === 'GOAL' && prevOutcome !== 'GOAL' ? matchStatsRef.current.playerGoals + 1 : matchStatsRef.current.playerGoals;
-      const nextAiGoals = !isPlayer && outcome === 'GOAL' && prevOutcome !== 'GOAL' ? matchStatsRef.current.aiGoals + 1 : matchStatsRef.current.aiGoals;
+      const nextAiGoals = !isPlayer && outcome === 'GOAL' && prevOutcome !== 'GOAL' && !isAiAtCapAlready ? matchStatsRef.current.aiGoals + 1 : matchStatsRef.current.aiGoals;
       const nextPWoodwork = isPlayer && outcome === 'HIT THE WOODWORK' ? matchStatsRef.current.playerWoodwork + 1 : matchStatsRef.current.playerWoodwork;
       const nextAiWoodwork = !isPlayer && outcome === 'HIT THE WOODWORK' ? matchStatsRef.current.aiWoodwork + 1 : matchStatsRef.current.aiWoodwork;
 
@@ -1734,7 +1768,12 @@ export default function Stadium3DView({
               });
             }
           } else {
-            const nextScore = awayScoreRef.current + 1;
+            const cap = getAiMaxGoalCap();
+            if (!isOnlineMatch && !isPracticeMode && awayScoreRef.current >= cap) {
+              // Strict offline cap: AI can never exceed 3 goals in quick play offline
+              return;
+            }
+            const nextScore = Math.min(cap, awayScoreRef.current + 1);
             awayScoreRef.current = nextScore;
             setAwayScore(nextScore);
             aiConsecutiveGoalsRef.current += 1; // Increment AI consecutive goal count
@@ -2074,6 +2113,9 @@ export default function Stadium3DView({
   const lockedCurveRef = useRef<number>(0);
   const shotGravityRef = useRef<number>(9.81);
   const localShotFiredThisTurnRef = useRef<boolean>(false);
+  const pendingTurnAdvancePayloadRef = useRef<OnlineTurnAdvancePayload | null>(null);
+  const lastProcessedTurnNumberRef = useRef<number>(0);
+  const applyTurnAdvancePayloadRef = useRef<((payload: OnlineTurnAdvancePayload) => void) | null>(null);
 
   // Oscillators (Aim, Power, Curve) are updated synchronously inside the 60 FPS Three.js animate() loop
   // for ultra-smooth responsiveness and zero frame desynchronization on big screens.
@@ -2172,13 +2214,10 @@ export default function Stadium3DView({
       }
     });
 
-    const unsubTurn = onlineMatchManager.on('turn_advanced', (payload: OnlineTurnAdvancePayload) => {
-      // In bot matches or while local player has fired a shot or is currently kicking/flying, NEVER interrupt the local game loop
-      if (isBotMatch || localShotFiredThisTurnRef.current || shotPhaseRef.current !== 'idle') {
-        return;
-      }
-
+    const applyTurnAdvancePayload = (payload: OnlineTurnAdvancePayload) => {
+      lastProcessedTurnNumberRef.current = Math.max(lastProcessedTurnNumberRef.current, payload.turnNumber || 0);
       localShotFiredThisTurnRef.current = false;
+      pendingTurnAdvancePayloadRef.current = null;
 
       // Synchronize survival lives for both players
       if (payload.survivalLives) {
@@ -2231,8 +2270,66 @@ export default function Stadium3DView({
         }
       }
 
+      if (isNowMyTurn) {
+        setSetupStep('aim');
+      }
+
       selectPositionIndex(payload.nextPositionIndex, payload.gkStartX);
+    };
+    applyTurnAdvancePayloadRef.current = applyTurnAdvancePayload;
+
+    const unsubTurn = onlineMatchManager.on('turn_advanced', (payload: OnlineTurnAdvancePayload) => {
+      // In bot matches or while local player has fired a shot, NEVER interrupt the local shot
+      if (isBotMatch || localShotFiredThisTurnRef.current) {
+        return;
+      }
+
+      if (payload.turnNumber && payload.turnNumber <= lastProcessedTurnNumberRef.current) {
+        return;
+      }
+
+      // If local client is currently playing out the shot, in flight, or watching replay:
+      if (shotPhaseRef.current !== 'idle' || isReplayActiveRef.current) {
+        pendingTurnAdvancePayloadRef.current = payload;
+        const isNowMyTurn = isLocalHost ? payload.nextTurnRole === 'host' : payload.nextTurnRole === 'guest';
+        // If it is our turn to kick next and replay is active, smoothly advance so neither player waits
+        if (isNowMyTurn && isReplayActiveRef.current) {
+          stopReplayAndAdvance();
+        }
+        return;
+      }
+
+      applyTurnAdvancePayload(payload);
     });
+
+    // Watchdog interval to prevent deadlocks when players are waiting on each other
+    const syncWatchdogInterval = setInterval(() => {
+      if (isBotMatch) return;
+
+      // If idle and a turn advance payload was buffered while watching a shot/replay, apply it immediately
+      if (shotPhaseRef.current === 'idle' && !isReplayActiveRef.current) {
+        if (pendingTurnAdvancePayloadRef.current) {
+          const buffered = pendingTurnAdvancePayloadRef.current;
+          pendingTurnAdvancePayloadRef.current = null;
+          applyTurnAdvancePayload(buffered);
+          return;
+        }
+
+        // If local client is stuck in 'ai' turn, check authoritative room state from manager
+        const room = onlineMatchManager.currentRoom;
+        if (room && room.status === 'playing') {
+          const myRole = isLocalHost ? 'host' : 'guest';
+          if (room.currentKickerRole === myRole && currentTurnRef.current === 'ai') {
+            currentTurnRef.current = 'player';
+            setCurrentTurn('player');
+            setSetupStep('aim');
+            if (room.positionIndex !== undefined) {
+              selectPositionIndex(room.positionIndex, room.gkStartX);
+            }
+          }
+        }
+      }
+    }, 800);
 
     const unsubPosition = onlineMatchManager.on('sync_position', (payload) => {
       if (payload.positionIndex !== undefined) {
@@ -2417,6 +2514,8 @@ export default function Stadium3DView({
       unsubRoomUpdated();
       unsubRematch();
       unsubTeamChanged();
+      clearInterval(syncWatchdogInterval);
+      applyTurnAdvancePayloadRef.current = null;
     };
   }, [isOnlineMatch, isLocalHost]);
 
@@ -2435,25 +2534,52 @@ export default function Stadium3DView({
 
   // AI OPPONENT AUTOMATION: Intelligent decision-making behind the scenes, then clean shot execution (Disabled in human online match or practice/training mode)
   useEffect(() => {
-    if (isPracticeMode || (isOnlineMatch && !isBotMatch) || currentTurn !== 'ai' || showExitModal || showResultsModal || isGameOver || shotPhaseRef.current !== 'idle') {
+    if (isPracticeMode || (isOnlineMatch && !isBotMatch) || currentTurn !== 'ai' || showExitModal || showResultsModal || isGameOver || isKothGameOver || shotPhaseRef.current !== 'idle') {
       return;
     }
 
-    let aiTimer: NodeJS.Timeout;
+    let aiTimer: NodeJS.Timeout | undefined;
+    let aiPowerInterval: NodeJS.Timeout | undefined;
+    let statusTimer: NodeJS.Timeout | undefined;
+    let lockSoundTimer: NodeJS.Timeout | undefined;
+    let strikeTextTimer: NodeJS.Timeout | undefined;
     const isPenaltyScenario = isPenaltyTraining || isPenaltyShootoutRef.current || penaltyShootout.isActive || isPenaltyTrainingRef.current;
+    const isKotH = gameMode === 'king_of_the_hill' || Boolean(onKingOfTheHillShotComplete);
 
     if (setupStep === 'aim') {
-      setAiStepStatus(isPenaltyScenario ? 'AI SIZING UP GOALKEEPER...' : 'AI THINKING...');
+      if (isKotH) {
+        setAiStepStatus(kothShooterName ? `${kothShooterName.toUpperCase()} TAKING POSITION...` : 'STRIKER TAKING POSITION...');
+      } else {
+        setAiStepStatus(isPenaltyScenario ? 'AI SIZING UP GOALKEEPER...' : 'AI THINKING...');
+      }
 
-      // Dynamic pacing: snappy 0.30s - 0.50s for penalty matches, 0.85s - 1.25s for tactical free kicks
-      const aimDecisionDelay = isPenaltyScenario ? (300 + Math.random() * 200) : (850 + Math.random() * 400);
+      // Natural broadcasting pacing:
+      // In KotH, camera sweeps to spot over ~900ms, then striker sizes up the wall & goalkeeper deliberately
+      const aimDecisionDelay = isPenaltyScenario
+        ? (300 + Math.random() * 200)
+        : isKotH
+        ? (2300 + Math.random() * 500)
+        : (850 + Math.random() * 400);
+
+      if (isKotH) {
+        statusTimer = setTimeout(() => {
+          if (currentTurnRef.current !== 'ai' || isPausedRef.current || isGameOverRef.current) return;
+          setAiStepStatus(kothShooterName ? `${kothShooterName.toUpperCase()} SIZING UP GOAL...` : 'STRIKER SIZING UP GOAL...');
+        }, 900);
+
+        lockSoundTimer = setTimeout(() => {
+          if (currentTurnRef.current !== 'ai' || isPausedRef.current || isGameOverRef.current) return;
+          playLockAimSound();
+          setAiStepStatus(kothShooterName ? `${kothShooterName.toUpperCase()} AIM LOCKED!` : 'AIM LOCKED!');
+        }, Math.max(1400, aimDecisionDelay - 450));
+      }
 
       aiTimer = setTimeout(() => {
         if (currentTurnRef.current !== 'ai' || isPausedRef.current || isGameOverRef.current) return;
 
         // Match & Mode-Specific AI Goal Cap & Tactical Shot Calibration:
         // Strict Maximum Cap enforced per mode (e.g. max 3 goals in Quick Play, Survival, Wager, World Cup Final; max 2 in World Cup Group/KO).
-        const isCapMode = (isWorldCupMatch || isBotMatch || isWagerMatch || isSurvival || (!isOnlineMatch && !isPenaltyScenario && !isPracticeMode));
+        const isCapMode = !isKotH && (isWorldCupMatch || isBotMatch || isWagerMatch || isSurvival || (!isOnlineMatch && !isPenaltyScenario && !isPracticeMode));
         const maxAllowedAiGoals = getAiMaxGoalCap();
         const currentAiScore = awayScoreRef.current;
         const isAiAtMaxGoalCap = isCapMode && currentAiScore >= maxAllowedAiGoals;
@@ -2496,95 +2622,87 @@ export default function Stadium3DView({
           setAimProgress(passAim);
           setAiStepStatus('AI SPOTTED OPEN TEAMMATE!');
         } else if (isPenaltyScenario) {
-          // --- RENEWED AI PENALTY INTELLIGENCE ---
+          // --- CLINICAL AI PENALTY INTELLIGENCE ---
           aiPassTargetTeammateRef.current = null;
           const ballPos = fkBallPosRef.current || new THREE.Vector3(0, 0.11, -42.0 + PENALTY_DISTANCE);
           const span = getAimTargetSpan(ballPos.z, -42.0);
-          const gkX = gkReadyXRef.current || 0;
 
-          // Penalty tactical evaluation: Read goalkeeper anticipation and stance
-          const isSuddenDeath = penaltyShootout.round > 5;
-          const openSide = gkX > 0.10 ? -1 : (gkX < -0.10 ? 1 : (Math.random() > 0.5 ? 1 : -1));
-          
-          let targetGoalX: number;
+          // The goalkeeper is always in center (0.0). Target the corners!
+          const openSide = Math.random() > 0.5 ? 1 : -1;
           const tacticRoll = Math.random();
+          let targetGoalX: number;
 
-          if (isSuddenDeath) {
-            // Sudden death: ice-cold clinical placement into unreachable corners
-            targetGoalX = openSide * (2.65 + Math.random() * 0.75);
-          } else if (tacticRoll < 0.35) {
-            // Tactic 1: Clinical Low Corner Placement (Side-netting)
-            targetGoalX = openSide * (2.60 + Math.random() * 0.75);
-          } else if (tacticRoll < 0.68) {
-            // Tactic 2: Upper 90 / Top Corner Strike
-            targetGoalX = openSide * (2.50 + Math.random() * 0.80);
-          } else if (tacticRoll < 0.88) {
-            // Tactic 3: Driven Opposite Cross-Shot
-            targetGoalX = -openSide * (2.10 + Math.random() * 0.85);
+          if (tacticRoll < 0.45) {
+            // Upper 90 top-corner blast (x ~ 2.80m to 3.25m)
+            targetGoalX = openSide * (2.80 + Math.random() * 0.45);
+          } else if (tacticRoll < 0.80) {
+            // Low driven corner drill into side-netting
+            targetGoalX = openSide * (2.90 + Math.random() * 0.40);
           } else {
-            // Tactic 4: Subtle center placement if keeper committed to a side
-            targetGoalX = (Math.random() - 0.5) * 0.80;
+            // Whipped opposite corner strike
+            targetGoalX = -openSide * (2.75 + Math.random() * 0.45);
           }
 
-          // Penalty aim calibration
-          const penaltyAimJitter = (Math.random() - 0.5) * (isSuddenDeath ? 0.03 : 0.06);
+          const penaltyAimJitter = (Math.random() - 0.5) * 0.03;
           const targetAimBase = 0.5 + targetGoalX / span;
           const smartAim = Math.max(0.08, Math.min(0.92, targetAimBase + penaltyAimJitter));
 
           lockedAimRef.current = smartAim;
           currentAimRef.current = smartAim;
           setAimProgress(smartAim);
-          setAiStepStatus(isSuddenDeath ? 'AI FOCUSING ON MATCH POINT...' : 'AI TARGETING THE CORNER...');
+          setAiStepStatus('AI TARGETING THE CORNER...');
         } else {
           aiPassTargetTeammateRef.current = null;
           const ballPos = fkBallPosRef.current || new THREE.Vector3(0, 0.11, 0);
           const span = getAimTargetSpan(ballPos.z, -42.0);
           const gkX = gkReadyXRef.current || 0;
 
+          // Goal posts are at x = ±3.66m. Goalkeeper is centered (x = 0).
+          const openSide = (fkXOffset || 0) > 0.4 ? -1 : ((fkXOffset || 0) < -0.4 ? 1 : (Math.random() > 0.5 ? 1 : -1));
           let targetGoalX: number;
 
           if (isAiAtMaxGoalCap) {
-            // STRICT CAP ENFORCEMENT: AI has reached its match goal limit.
-            // Produce competitive near-misses, woodwork strikes, wall blocks, or saveable shots so gameplay remains thrilling without exceeding the cap.
-            const missTactic = Math.random();
-            if (missTactic < 0.40) {
-              // Direct saveable shot towards the goalkeeper's ready position
-              targetGoalX = gkX + (Math.random() - 0.5) * 0.90;
-            } else if (missTactic < 0.70) {
-              // Thrilling woodwork / post hit
-              const postSide = Math.random() > 0.5 ? 1 : -1;
-              targetGoalX = postSide * (3.82 + Math.random() * 0.24);
+            // Strict enforcement: AI has reached max goal cap (3 goals in Quick Play offline).
+            // Produce realistic, non-scoring outcomes: saves, woodwork hits, or near-misses!
+            const capShotRoll = Math.random();
+            if (capShotRoll < 0.48) {
+              // Directed towards goalkeeper's reach area for a clean save or catch
+              targetGoalX = gkX + (Math.random() - 0.5) * 1.3;
+            } else if (capShotRoll < 0.74) {
+              // Striking off the woodwork (post or bar)
+              targetGoalX = openSide * (3.62 + (Math.random() - 0.5) * 0.12);
             } else {
-              // Wide or sliced effort past post
-              const missSide = (fkXOffset || 0) > 0 ? 1 : -1;
-              targetGoalX = missSide * (4.15 + Math.random() * 0.95);
+              // Narrow miss just wide of the post
+              targetGoalX = openSide * (3.88 + Math.random() * 0.45);
             }
           } else {
-            // UNPREDICTABLE, DYNAMIC AI SHOT GENERATION (Can score at any turn at random):
-            const openSide = gkX > 0.15 ? -1 : (gkX < -0.15 ? 1 : ((fkXOffset || 0) > 0 ? -1 : (Math.random() > 0.5 ? 1 : -1)));
+            // Natural human distribution: AI does NOT have to reach 3 goals.
+            // Realistic mix of dangerous corners, contested mid-goal strikes, routine saves, woodwork, and misses.
             const shotStyleRoll = Math.random();
-
-            if (shotStyleRoll < 0.32) {
-              // Style 1: Dangerous Curling Top-Corner Strike (Whipped into the side 90)
-              targetGoalX = openSide * (2.45 + Math.random() * 0.80);
-            } else if (shotStyleRoll < 0.60) {
+            if (shotStyleRoll < 0.26) {
+              // Style 1: Dangerous Curling Top-Corner Strike into the side 90
+              targetGoalX = openSide * (2.80 + Math.random() * 0.45);
+            } else if (shotStyleRoll < 0.50) {
               // Style 2: Low Driven Drill into Side-Netting
-              targetGoalX = openSide * (2.55 + Math.random() * 0.75);
-            } else if (shotStyleRoll < 0.80) {
-              // Style 3: Far-Post Cross Goal Bender (Curling opposite keeper stance)
-              targetGoalX = -openSide * (2.15 + Math.random() * 0.85);
-            } else if (shotStyleRoll < 0.92) {
-              // Style 4: Dipping Knuckleball / Central Danger Zone
-              targetGoalX = openSide * (1.30 + Math.random() * 0.80);
+              targetGoalX = openSide * (2.90 + Math.random() * 0.40);
+            } else if (shotStyleRoll < 0.72) {
+              // Style 3: Mid-goal strike giving goalkeeper a realistic chance to dive and parry
+              targetGoalX = gkX + (Math.random() > 0.5 ? 1 : -1) * (1.1 + Math.random() * 0.95);
+            } else if (shotStyleRoll < 0.86) {
+              // Style 4: Central shot testing goalkeeper directly (routine save / catch)
+              targetGoalX = gkX + (Math.random() - 0.5) * 1.2;
+            } else if (shotStyleRoll < 0.94) {
+              // Style 5: Woodwork strike (post or crossbar rattle)
+              targetGoalX = openSide * (3.62 + (Math.random() - 0.5) * 0.10);
             } else {
-              // Style 5: Competitive On-Target Test towards keeper
-              targetGoalX = gkX + (Math.random() - 0.5) * 1.30;
+              // Style 6: Narrow miss wide or high
+              targetGoalX = openSide * (3.85 + Math.random() * 0.40);
             }
           }
 
-          const humanJitter = (Math.random() - 0.5) * (isAiAtMaxGoalCap ? 0.20 : 0.08);
+          const humanJitter = (Math.random() - 0.5) * 0.035;
           const targetAimBase = 0.5 + targetGoalX / span;
-          const smartAim = Math.max(0.06, Math.min(0.94, targetAimBase + humanJitter));
+          const smartAim = Math.max(0.08, Math.min(0.92, targetAimBase + humanJitter));
 
           lockedAimRef.current = smartAim;
           currentAimRef.current = smartAim;
@@ -2597,120 +2715,256 @@ export default function Stadium3DView({
       setAiStepStatus(
         isPenaltyScenario
           ? 'CALIBRATING PENALTY STRIKE...'
-          : aiPassedToTeammateRef.current
-          ? 'CALIBRATING PASS POWER...'
+          : isKotH
+          ? (kothShooterName ? `${kothShooterName.toUpperCase()} CHARGING SHOT...` : 'CHARGING SHOT...')
           : 'SELECTING TARGET POWER...'
       );
-      const powerPause = isPenaltyScenario ? (160 + Math.random() * 100) : (350 + Math.random() * 250);
-      aiTimer = setTimeout(() => {
-        if (currentTurnRef.current !== 'ai' || isPausedRef.current || isGameOverRef.current) return;
 
-        if (aiPassedToTeammateRef.current) {
-          const passPower = THREE.MathUtils.clamp(
-            Math.round(28 + (Math.random() - 0.5) * 6),
-            24,
-            34
-          );
+      if (isKotH) {
+        // Confident free kick power based on distance
+        let baseTargetPower = 78;
+        if (fkDistance <= 22) baseTargetPower = 76;
+        else if (fkDistance <= 26) baseTargetPower = 79;
+        else if (fkDistance <= 30) baseTargetPower = 82;
+        else baseTargetPower = 85;
 
-          lockedPowerRef.current = passPower;
-          currentPowerRef.current = passPower;
-          setPower(passPower);
-        } else if (isPenaltyScenario) {
-          // Penalty Power Calibration for 23.1m penalty spot
-          const isSuddenDeath = penaltyShootout.round > 5;
-          
-          let targetPower: number;
-          const powerStyleRoll = Math.random();
-          if (powerStyleRoll < 0.60) {
-            targetPower = 78 + (Math.random() - 0.5) * 6; // Driven corner
-          } else if (powerStyleRoll < 0.90) {
-            targetPower = 86 + (Math.random() - 0.5) * 4; // Upper 90 blast
-          } else {
-            targetPower = 74 + (Math.random() - 0.5) * 4; // Low placement
+        const smartPower = THREE.MathUtils.clamp(
+          Math.round(baseTargetPower + (Math.random() - 0.5) * 3),
+          74,
+          88
+        );
+
+        // Smoothly animate power charging over ~900ms, then strike at 1150ms!
+        const chargeStartTime = performance.now();
+        const chargeDuration = 900;
+        aiPowerInterval = setInterval(() => {
+          if (currentTurnRef.current !== 'ai' || isPausedRef.current || isGameOverRef.current) {
+            clearInterval(aiPowerInterval);
+            return;
           }
-
-          const smartPenaltyPower = THREE.MathUtils.clamp(
-            Math.round(targetPower),
-            70,
-            isSuddenDeath ? 92 : 88
-          );
-
-          lockedPowerRef.current = smartPenaltyPower;
-          currentPowerRef.current = smartPenaltyPower;
-          setPower(smartPenaltyPower);
-        } else {
-          const maxAllowedAiGoals = getAiMaxGoalCap();
-          const isAiAtMaxGoalCap = awayScoreRef.current >= maxAllowedAiGoals;
-
-          let baseTargetPower = 75;
-          if (fkDistance <= 22) baseTargetPower = 73;
-          else if (fkDistance <= 26) baseTargetPower = 76;
-          else if (fkDistance <= 30) baseTargetPower = 79;
-          else baseTargetPower = 82;
-
-          if (isAiAtMaxGoalCap && Math.random() < 0.40) {
-            // If capped, occasionally add power to soar over crossbar
-            baseTargetPower = 88 + Math.random() * 4;
+          const elapsed = performance.now() - chargeStartTime;
+          const frac = Math.min(1.0, elapsed / chargeDuration);
+          const currentVal = Math.round(frac * smartPower);
+          currentPowerRef.current = currentVal;
+          setPower(currentVal);
+          if (frac >= 1.0) {
+            clearInterval(aiPowerInterval);
           }
+        }, 50);
 
-          const powerVariance = isAiAtMaxGoalCap ? 8 : 4;
-          const smartPower = THREE.MathUtils.clamp(
-            Math.round(baseTargetPower + (Math.random() - 0.5) * powerVariance),
-            68,
-            88
-          );
+        strikeTextTimer = setTimeout(() => {
+          if (currentTurnRef.current !== 'ai' || isPausedRef.current || isGameOverRef.current) return;
+          setAiStepStatus(kothShooterName ? `${kothShooterName.toUpperCase()} EXECUTING STRIKE!` : 'EXECUTING STRIKE!');
+        }, 950);
 
+        aiTimer = setTimeout(() => {
+          if (currentTurnRef.current !== 'ai' || isPausedRef.current || isGameOverRef.current) return;
           lockedPowerRef.current = smartPower;
           currentPowerRef.current = smartPower;
           setPower(smartPower);
-        }
 
-        // Automatic Intelligent Curve for AI
-        const lockedAim = lockedAimRef.current ?? 0.5;
-        const currentPow = lockedPowerRef.current ?? 75;
-        let smartCurve = 0;
-
-        if (aiPassedToTeammateRef.current) {
-          smartCurve = (Math.random() - 0.5) * 0.006;
-        } else if (isPenaltyScenario) {
-          const curveDir = lockedAim < 0.5 ? 1 : -1;
-          smartCurve = curveDir * (8.0 + Math.random() * 8.0);
-        } else {
-          smartCurve = calculateIntelligentCurve(
+          const lockedAim = lockedAimRef.current ?? 0.5;
+          const smartCurve = calculateIntelligentCurve(
             lockedAim,
-            currentPow,
+            smartPower,
             fkBallPosRef.current,
             gkReadyXRef.current || 0,
             wallDefendersRef.current[0]?.position.x,
             fkDistance,
             fkXOffset
           );
-        }
 
-        lockedCurveRef.current = smartCurve;
-        currentCurveRef.current = smartCurve;
-        setCurveAmount(smartCurve);
-        setAiStepStatus('EXECUTING SHOT!');
-        setSetupStep('kicking');
-        triggerShotWithPower();
-      }, powerPause);
+          lockedCurveRef.current = smartCurve;
+          currentCurveRef.current = smartCurve;
+          setCurveAmount(smartCurve);
+          setSetupStep('kicking');
+          triggerShotWithPower();
+        }, 1150);
+      } else {
+        const powerPause = isPenaltyScenario
+          ? (160 + Math.random() * 100)
+          : (350 + Math.random() * 250);
+
+        aiTimer = setTimeout(() => {
+          if (currentTurnRef.current !== 'ai' || isPausedRef.current || isGameOverRef.current) return;
+
+          if (isPenaltyScenario) {
+            // Confident, powerful penalty strike
+            let targetPower: number;
+            const powerStyleRoll = Math.random();
+            if (powerStyleRoll < 0.60) {
+              targetPower = 80 + (Math.random() - 0.5) * 4; // Driven corner
+            } else if (powerStyleRoll < 0.90) {
+              targetPower = 84 + (Math.random() - 0.5) * 3; // Upper 90 blast
+            } else {
+              targetPower = 77 + (Math.random() - 0.5) * 3; // Low placement
+            }
+
+            const smartPenaltyPower = THREE.MathUtils.clamp(Math.round(targetPower), 74, 88);
+            lockedPowerRef.current = smartPenaltyPower;
+            currentPowerRef.current = smartPenaltyPower;
+            setPower(smartPenaltyPower);
+          } else {
+            // Confident free kick power
+            let baseTargetPower = 78;
+            if (fkDistance <= 22) baseTargetPower = 76;
+            else if (fkDistance <= 26) baseTargetPower = 79;
+            else if (fkDistance <= 30) baseTargetPower = 82;
+            else baseTargetPower = 85;
+
+            const smartPower = THREE.MathUtils.clamp(
+              Math.round(baseTargetPower + (Math.random() - 0.5) * 3),
+              74,
+              88
+            );
+
+            lockedPowerRef.current = smartPower;
+            currentPowerRef.current = smartPower;
+            setPower(smartPower);
+          }
+
+          // Automatic Intelligent Curve for AI (reduced & balanced)
+          const lockedAim = lockedAimRef.current ?? 0.5;
+          const currentPow = lockedPowerRef.current ?? 78;
+          let smartCurve = 0;
+
+          if (isPenaltyScenario) {
+            const curveDir = lockedAim < 0.5 ? 1 : -1;
+            smartCurve = curveDir * (3.5 + Math.random() * 3.5);
+          } else {
+            smartCurve = calculateIntelligentCurve(
+              lockedAim,
+              currentPow,
+              fkBallPosRef.current,
+              gkReadyXRef.current || 0,
+              wallDefendersRef.current[0]?.position.x,
+              fkDistance,
+              fkXOffset
+            );
+          }
+
+          lockedCurveRef.current = smartCurve;
+          currentCurveRef.current = smartCurve;
+          setCurveAmount(smartCurve);
+          setAiStepStatus('EXECUTING SHOT!');
+          setSetupStep('kicking');
+          triggerShotWithPower();
+        }, powerPause);
+      }
     }
 
     return () => {
       if (aiTimer) clearTimeout(aiTimer);
+      if (aiPowerInterval) clearInterval(aiPowerInterval);
+      if (statusTimer) clearTimeout(statusTimer);
+      if (lockSoundTimer) clearTimeout(lockSoundTimer);
+      if (strikeTextTimer) clearTimeout(strikeTextTimer);
     };
-  }, [isPracticeMode, currentTurn, setupStep, showExitModal, showResultsModal, isGameOver, fkDistance, fkXOffset, penaltyShootout.round, penaltyShootout.isActive]);
+  }, [isPracticeMode, currentTurn, setupStep, showExitModal, showResultsModal, isGameOver, isKothGameOver, fkDistance, fkXOffset, penaltyShootout.round, penaltyShootout.isActive, kothTurnKey, kothShooterName]);
+
+  /**
+   * Calculates the exact initial free kick camera perspective for any given ball distance & X offset.
+   * Ensures the camera is positioned behind the ball along the shooting trajectory towards the goal mouth.
+   */
+  const computeFreeKickCameraConfig = (
+    dist: number = fkDistanceRef.current,
+    xOff: number = fkXOffsetRef.current
+  ) => {
+    const goalLineZ = -42.0;
+    const goalCenter = new THREE.Vector3(0, 1.34, goalLineZ);
+    const effectiveFkDistance = dist * 1.05;
+    const fkBallPos = new THREE.Vector3(xOff, 0.3015, goalLineZ + effectiveFkDistance);
+    const dirToGoal = goalCenter.clone().sub(fkBallPos).normalize();
+
+    const container = mountRef.current;
+    const cWidth = container ? container.clientWidth : (typeof window !== 'undefined' ? window.innerWidth : 1200);
+    const cHeight = container && container.clientHeight > 0 ? container.clientHeight : (typeof window !== 'undefined' ? Math.max(1, window.innerHeight) : 800);
+    const aspect = cWidth / Math.max(1, cHeight);
+    const isLandscape = aspect >= 1.05;
+
+    const targetFov = getAdaptiveCameraFov(aspect);
+    const isBigScreen = isLandscape || cWidth >= 1024;
+    const camBackDist = isBigScreen ? (cWidth >= 1600 ? 18.2 : 17.2) : 12.8;
+    const camHeight = isBigScreen ? (cWidth >= 1600 ? 4.9 : 5.1) : 4.6;
+
+    const camPos = fkBallPos.clone().sub(dirToGoal.clone().multiplyScalar(camBackDist));
+    camPos.y = camHeight;
+
+    let targetPos: THREE.Vector3;
+    if (isBigScreen) {
+      const lookAheadDist = Math.min(18.0, Math.max(9.0, fkBallPos.distanceTo(goalCenter) * 0.48));
+      targetPos = fkBallPos.clone().add(dirToGoal.clone().multiplyScalar(lookAheadDist));
+      targetPos.y = 1.25;
+    } else {
+      targetPos = fkBallPos.clone().add(dirToGoal.clone().multiplyScalar(10.0));
+      targetPos.y = 1.05;
+    }
+
+    return { camPos, targetPos, targetFov, dirToGoal, fkBallPos };
+  };
+
+  /**
+   * Resets the 3D camera back to the initial free kick shooting perspective.
+   * Used when resetting turns, skipping replays, or when a replay finishes.
+   */
+  const resetCameraToInitialFreeKickPosition = (
+    dist: number = fkDistanceRef.current,
+    xOff: number = fkXOffsetRef.current,
+    smooth: boolean = false,
+    durationMs: number = 850
+  ) => {
+    if (!cameraRef.current || !controlsRef.current) return;
+    const { camPos, targetPos, targetFov } = computeFreeKickCameraConfig(dist, xOff);
+
+    targetCamPosRef.current.copy(camPos);
+    targetCamLookAtRef.current.copy(targetPos);
+    targetCamFovRef.current = targetFov;
+
+    if (smooth) {
+      startCamPosRef.current.copy(cameraRef.current.position);
+      startCamLookAtRef.current.copy(controlsRef.current.target);
+      startCamFovRef.current = cameraRef.current.fov;
+      camTransitionDurationRef.current = durationMs;
+      transitionStartTimeRef.current = performance.now();
+      isTransitioningCamRef.current = true;
+      controlsRef.current.enabled = false;
+      controlsRef.current.enableRotate = false;
+      controlsRef.current.enableZoom = false;
+      controlsRef.current.enablePan = false;
+    } else {
+      isTransitioningCamRef.current = false;
+      cameraRef.current.position.copy(camPos);
+      controlsRef.current.target.copy(targetPos);
+      cameraRef.current.fov = targetFov;
+      cameraRef.current.updateProjectionMatrix();
+      controlsRef.current.enabled = false;
+      controlsRef.current.enableRotate = false;
+      controlsRef.current.enableZoom = false;
+      controlsRef.current.enablePan = false;
+      controlsRef.current.update();
+      cameraRef.current.lookAt(targetPos);
+      startCamPosRef.current.copy(camPos);
+      startCamLookAtRef.current.copy(targetPos);
+      startCamFovRef.current = targetFov;
+    }
+  };
 
   // Reset free kick entities to default standing state
-  const resetToDefaultState = (forcedGkStartX?: number) => {
+  const resetToDefaultState = (
+    forcedGkStartX?: number,
+    targetDist?: number,
+    targetXOff?: number,
+    smoothCamera: boolean = false,
+    camDurationMs: number = 850
+  ) => {
     stopGoalCheerSound();
     playWhistleSound();
     setSetupStep('aim');
     setPower(0);
     setAimProgress(0.5);
     setCurveAmount(0);
-    setPlayInTimer(15);
-    playInTimerRef.current = 15;
+    setPlayInTimer(10);
+    playInTimerRef.current = 10;
     setTurnEpoch((prev) => prev + 1);
     currentPowerRef.current = 0;
     currentAimRef.current = 0.5;
@@ -2809,55 +3063,63 @@ export default function Stadium3DView({
 
     const flawRoll = Math.random();
     let flawType: GoalkeeperFlawType = 'none';
-    let reactionDelay = isAiShooter
-      ? (isPenaltyScenario ? (0.012 + Math.random() * 0.018) : (0.035 + Math.random() * 0.035))
-      : (isPenaltyScenario ? (0.015 + Math.random() * 0.020) : (0.040 + Math.random() * 0.040));
+    let reactionDelay = isPenaltyScenario
+      ? (0.12 + Math.random() * 0.08)
+      : (0.15 + Math.random() * 0.10);
     let misjudgedCurve = false;
-    let flawOffset = isAiShooter
-      ? (Math.random() - 0.5) * 0.12
-      : (Math.random() - 0.5) * 0.25;
+    let flawOffset = (Math.random() - 0.5) * 0.35;
     let gambleSide = Math.random() > 0.5 ? 1 : -1;
 
+    const isAiAtStageCap = isAiShooter && !isOnlineMatch && !isPracticeMode && awayScoreRef.current >= getAiMaxGoalCap();
+
     if (isAiShooter) {
-      // When AI shoots, the player's goalkeeper is alert, agile, and properly defends the net
-      if (flawRoll < 0.08) {
-        // Minor curve perception misread on sharp bend
-        flawType = 'deceived_by_curve';
-        misjudgedCurve = true;
-        flawOffset = (Math.random() - 0.5) * 0.30;
+      if (isAiAtStageCap) {
+        // AI is at or above goal cap: User's goalkeeper is 100% disciplined with zero flaws
+        flawType = 'none';
+        reactionDelay = 0.08;
+        misjudgedCurve = false;
+        flawOffset = 0;
+      } else {
+        // Defending against AI: User's goalkeeper has high natural competence so AI does NOT easily score or feel forced to 3 goals
+        if (flawRoll < 0.07) {
+          flawType = 'wrong_footed_gamble';
+          reactionDelay = 0.13;
+        } else if (flawRoll < 0.15) {
+          flawType = 'deceived_by_curve';
+          misjudgedCurve = true;
+          flawOffset = (Math.random() - 0.5) * 0.20;
+        } else {
+          flawType = 'none';
+          reactionDelay = 0.10 + Math.random() * 0.05;
+        }
+      }
+    } else if (isPenaltyScenario) {
+      if (flawRoll < 0.28) {
+        flawType = 'wrong_footed_gamble';
+        reactionDelay = 0.10 + Math.random() * 0.06;
+      } else if (flawRoll < 0.45) {
+        flawType = 'premature_jump';
+        reactionDelay = 0.20 + Math.random() * 0.08;
+      } else if (flawRoll < 0.60) {
+        flawType = 'fingertip_spill';
       } else {
         flawType = 'none';
       }
     } else {
-      if (isPenaltyScenario) {
-        // Penalty Specific Goalkeeper Behaviors (Lightning-quick reaction and dive response!)
-        if (flawRoll < 0.20) {
-          flawType = 'wrong_footed_gamble';
-          reactionDelay = 0.015 + Math.random() * 0.02;
-        } else if (flawRoll < 0.35) {
-          flawType = 'premature_jump';
-          reactionDelay = 0.020 + Math.random() * 0.02;
-        } else if (flawRoll < 0.48) {
-          flawType = 'fingertip_spill';
-        } else {
-          flawType = 'none';
-        }
+      if (flawRoll < 0.20) {
+        flawType = 'wrong_footed_gamble';
+        reactionDelay = 0.12 + Math.random() * 0.06;
+      } else if (flawRoll < 0.38) {
+        flawType = 'deceived_by_curve';
+        misjudgedCurve = true;
+        flawOffset = (Math.random() - 0.5) * 0.40;
+      } else if (flawRoll < 0.52) {
+        flawType = 'premature_jump';
+        reactionDelay = 0.20 + Math.random() * 0.10;
+      } else if (flawRoll < 0.65) {
+        flawType = 'fingertip_spill';
       } else {
-        if (flawRoll < 0.14) {
-          flawType = 'premature_jump';
-          reactionDelay = 0.040 + Math.random() * 0.03;
-        } else if (flawRoll < 0.28) {
-          flawType = 'deceived_by_curve';
-          misjudgedCurve = true;
-          flawOffset = (Math.random() - 0.5) * 0.45;
-        } else if (flawRoll < 0.40) {
-          flawType = 'wrong_footed_gamble';
-          reactionDelay = 0.045 + Math.random() * 0.03;
-        } else if (flawRoll < 0.50) {
-          flawType = 'fingertip_spill';
-        } else {
-          flawType = 'none';
-        }
+        flawType = 'none';
       }
     }
 
@@ -2912,6 +3174,10 @@ export default function Stadium3DView({
     flightTimeRef.current = 0;
     hasBouncedRef.current = false;
     turnStartTimeRef.current = Date.now();
+
+    const currentDist = targetDist !== undefined ? targetDist : fkDistanceRef.current;
+    const currentX = targetXOff !== undefined ? targetXOff : (fkBallPosRef.current ? fkBallPosRef.current.x : fkXOffsetRef.current);
+    resetCameraToInitialFreeKickPosition(currentDist, currentX, smoothCamera, camDurationMs);
   };
 
   // Executes final strike with intelligent swerve and trajectory
@@ -3021,7 +3287,7 @@ export default function Stadium3DView({
   };
 
   // Select specific free kick position from the 30 preset positions
-  const selectPositionIndex = (index: number, forcedGkStartX?: number) => {
+  const selectPositionIndex = (index: number, forcedGkStartX?: number, smoothTransition: boolean = true) => {
     stopGoalCheerSound();
     const nextIndex = (index + FREE_KICK_POSITIONS.length) % FREE_KICK_POSITIONS.length;
     const pos = FREE_KICK_POSITIONS[nextIndex];
@@ -3045,10 +3311,50 @@ export default function Stadium3DView({
       controlsRef.current.enablePan = false;
     }
 
+    if (forcedTurn !== undefined) {
+      currentTurnRef.current = forcedTurn;
+      setCurrentTurn(forcedTurn);
+    }
+
     setCurrentPosIndex(nextIndex);
     currentPosIndexRef.current = nextIndex;
     setFkDistance(pos.distance);
     setFkXOffset(pos.xOffset);
+    fkDistanceRef.current = pos.distance;
+    fkXOffsetRef.current = pos.xOffset;
+
+    // Immediately update ball coordinates and compute exact kicker position for the new position before resetting state
+    const goalLineZ = -42.0;
+    const effectiveFkDistance = pos.distance * 1.05;
+    const newBallPos = new THREE.Vector3(pos.xOffset, 0.3015, goalLineZ + effectiveFkDistance);
+    if (fkBallPosRef.current) {
+      fkBallPosRef.current.copy(newBallPos);
+    }
+    if (ballMeshRef.current) {
+      ballMeshRef.current.position.copy(newBallPos);
+      ballMeshRef.current.rotation.set(0, 0, 0);
+    }
+
+    // Compute exact kicker coordinates for the new spot immediately so camera and kicker are aligned
+    const goalCenter = new THREE.Vector3(0, 1.22, goalLineZ);
+    const dirToGoal = goalCenter.clone().sub(newBallPos).normalize();
+    const rightPerp = new THREE.Vector3(-dirToGoal.z, 0, dirToGoal.x);
+    const kickerSideDir = rightPerp.clone().negate();
+    const baseKickerOffset = 1.05;
+    const newKickerPos = newBallPos.clone()
+      .sub(dirToGoal.clone().multiplyScalar(2.8 * 0.77 * 1.10 * 1.07 * 1.05 * 1.05))
+      .add(kickerSideDir.multiplyScalar(baseKickerOffset));
+    newKickerPos.y = 0;
+    kickerStartPosRef.current.copy(newKickerPos);
+
+    if (kickerGroupRef.current) {
+      kickerGroupRef.current.position.copy(newKickerPos);
+      const dirToBall = newBallPos.clone().sub(newKickerPos).normalize();
+      const newAngle = Math.atan2(dirToBall.x, dirToBall.z);
+      kickerFacingAngleRef.current = newAngle;
+      kickerGroupRef.current.rotation.y = newAngle;
+    }
+
     setWallSize(pos.wallSize);
     setSetupStep('aim');
     setAimProgress(0.5);
@@ -3062,7 +3368,10 @@ export default function Stadium3DView({
       ? forcedGkStartX
       : calculateRealisticGoalkeeperStartX(pos.xOffset, isPenaltyTrainingRef.current || isPenaltyShootoutRef.current);
 
-    resetToDefaultState(targetGkStartX);
+    const isInitialLoading = sceneLoading || !cameraRef.current || cameraRef.current.position.lengthSq() < 1;
+    const effectiveSmooth = smoothTransition && !isInitialLoading;
+
+    resetToDefaultState(targetGkStartX, pos.distance, pos.xOffset, effectiveSmooth, 900);
     setFreeKickEpoch((prev) => prev + 1);
   };
 
@@ -3081,6 +3390,18 @@ export default function Stadium3DView({
     activeReplayClipRef.current = [];
     isReplayActiveRef.current = false;
     setIsReplayActive(false);
+
+    if (gameMode === 'king_of_the_hill' || Boolean(onKingOfTheHillShotComplete)) {
+      shotPhaseRef.current = 'waiting_koth_turn';
+      shotFinishedTimeRef.current = 0;
+      const lastOutcome = shotOutcomeRef.current;
+      const isGoal = isGoalScoredRef.current || lastOutcome === 'GOAL';
+      const pRatio = powerRef.current / 100;
+      if (onKingOfTheHillShotComplete) {
+        onKingOfTheHillShotComplete(isGoal, lastOutcome || (isGoal ? 'GOAL' : 'MISSED'), pRatio, false);
+      }
+      return;
+    }
 
     if (isSurvival) {
       if (isOnlineMatch) {
@@ -3208,7 +3529,28 @@ export default function Stadium3DView({
             return;
           }
 
-          resetToDefaultState();
+          if (pendingTurnAdvancePayloadRef.current) {
+            const payload = pendingTurnAdvancePayloadRef.current;
+            pendingTurnAdvancePayloadRef.current = null;
+            applyTurnAdvancePayloadRef.current?.(payload);
+            return;
+          }
+
+          // Advance turn to local player
+          currentTurnRef.current = 'player';
+          setCurrentTurn('player');
+          setActiveSuperpower(null);
+          activeSuperpowerRef.current = null;
+          setSetupStep('aim');
+
+          const recentIndex = currentPosIndexRef.current;
+          const candidates = FREE_KICK_POSITIONS.map((_, i) => i).filter((i) => i !== recentIndex);
+          const nextPosIdx = candidates.length > 0
+            ? candidates[Math.floor(Math.random() * candidates.length)]
+            : (recentIndex + 1) % FREE_KICK_POSITIONS.length;
+          const nextPos = FREE_KICK_POSITIONS[nextPosIdx];
+          const nextGkStartX = calculateRealisticGoalkeeperStartX(nextPos.xOffset, false);
+          selectPositionIndex(nextPosIdx, nextGkStartX);
         }
         return;
       }
@@ -3357,7 +3699,7 @@ export default function Stadium3DView({
         setCurrentTurn('player');
         selectPositionIndex(nextPosIdx, nextGkStartX);
       } else {
-        // Defender completed watching the shot/replay: check if game finished or reset to default state
+        // Defender completed watching the shot/replay: check if game finished or advance turn to local player
         const timeIsUp = isTimeExpiredRef.current || (matchTimeRef.current >= 90 && stoppageSecondsRef.current !== null && stoppageCountdownRef.current >= (stoppageSecondsRef.current || 3));
         const pShots = matchStatsRef.current.playerShots;
         const aShots = matchStatsRef.current.aiShots;
@@ -3368,7 +3710,26 @@ export default function Stadium3DView({
           return;
         }
 
-        resetToDefaultState();
+        if (pendingTurnAdvancePayloadRef.current) {
+          const payload = pendingTurnAdvancePayloadRef.current;
+          pendingTurnAdvancePayloadRef.current = null;
+          applyTurnAdvancePayloadRef.current?.(payload);
+          return;
+        }
+
+        // Opponent's shot is over and we were defender: in 1v1 turn-based match, local player is the next kicker!
+        currentTurnRef.current = 'player';
+        setCurrentTurn('player');
+        setSetupStep('aim');
+
+        const recentIndex = currentPosIndexRef.current;
+        const candidates = FREE_KICK_POSITIONS.map((_, i) => i).filter((i) => i !== recentIndex);
+        const nextPosIdx = candidates.length > 0
+          ? candidates[Math.floor(Math.random() * candidates.length)]
+          : (recentIndex + 1) % FREE_KICK_POSITIONS.length;
+        const nextPos = FREE_KICK_POSITIONS[nextPosIdx];
+        const nextGkStartX = calculateRealisticGoalkeeperStartX(nextPos.xOffset, false);
+        selectPositionIndex(nextPosIdx, nextGkStartX);
       }
       return;
     }
@@ -3390,8 +3751,10 @@ export default function Stadium3DView({
         setCurrentTurn(nextTurn);
         setFkDistance(PENALTY_DISTANCE);
         setFkXOffset(0.0);
+        fkDistanceRef.current = PENALTY_DISTANCE;
+        fkXOffsetRef.current = 0.0;
         setWallSize(0);
-        resetToDefaultState();
+        resetToDefaultState(0.0, PENALTY_DISTANCE, 0.0);
       }
     } else if (!isGameOverRef.current) {
       if (isPracticeModeRef.current) {
@@ -3420,7 +3783,8 @@ export default function Stadium3DView({
 
   const startReplaySequence = () => {
     const isAnyPenaltyMode = isPenaltyTraining || isPenaltyShootoutRef.current || penaltyShootout.isActive || isPenaltyTrainingRef.current;
-    if (isPracticeMode || isAnyPenaltyMode || recordedReplayFramesRef.current.length < 5) {
+    const isKotH = gameMode === 'king_of_the_hill' || Boolean(onKingOfTheHillShotComplete);
+    if (isPracticeMode || isAnyPenaltyMode || isKotH || recordedReplayFramesRef.current.length < 5) {
       advanceToNextTurn();
       return;
     }
@@ -3528,6 +3892,10 @@ export default function Stadium3DView({
       controlsRef.current.enableZoom = false;
       controlsRef.current.enablePan = false;
     }
+
+    // Instantly reset camera back to the initial free kick shooting position
+    resetCameraToInitialFreeKickPosition(fkDistanceRef.current, fkXOffsetRef.current, false);
+
     advanceToNextTurn();
   };
 
@@ -3558,8 +3926,10 @@ export default function Stadium3DView({
     if (isPenaltyTraining) {
       setFkDistance(PENALTY_DISTANCE);
       setFkXOffset(0.0);
+      fkDistanceRef.current = PENALTY_DISTANCE;
+      fkXOffsetRef.current = 0.0;
       setWallSize(0);
-      resetToDefaultState(0.0);
+      resetToDefaultState(0.0, PENALTY_DISTANCE, 0.0);
       return;
     }
     const recentIndex = currentPosIndexRef.current;
@@ -3730,9 +4100,9 @@ export default function Stadium3DView({
     }
   };
 
-  // 15-Second Action Play-In Timer Countdown
-  // If the user doesn't kick before the timer reaches 15s (expires at 0s), the kicker automatically kicks the ball randomly
-  // Only active when isPlayInFeatureActive is true (Online Matches)
+  // 10-Second Action Play-In Timer Countdown
+  // If the user doesn't kick before the timer reaches 10s (expires at 0s), the kicker automatically kicks the ball randomly
+  // Only active when isPlayInFeatureActive is true (Online Matches & King of the Hill)
   useEffect(() => {
     if (
       !isPlayInFeatureActive ||
@@ -3754,7 +4124,7 @@ export default function Stadium3DView({
       setPlayInTimer((prev) => {
         if (prev <= 1) {
           clearInterval(interval);
-          // 15s Timer expired! Kicker shoots randomly
+          // 10s Timer expired! Kicker shoots randomly
           const randomAim = lockedAimRef.current !== null && lockedAimRef.current !== undefined
             ? lockedAimRef.current
             : (0.15 + Math.random() * 0.70);
@@ -5712,11 +6082,6 @@ export default function Stadium3DView({
           if (clip && clip.length > 1) {
             if (!isReplayPausedRef.current) {
               replayPlayheadTimeRef.current += dt * 1000 * replaySpeedRef.current;
-              // Throttle React state update to avoid heavy 60fps component re-renders
-              if (now - lastReplayUiUpdate > 80) {
-                lastReplayUiUpdate = now;
-                setReplayPlayheadTime(replayPlayheadTimeRef.current);
-              }
             }
 
             const curTime = replayPlayheadTimeRef.current;
@@ -5822,8 +6187,11 @@ export default function Stadium3DView({
             controls.update();
 
             // Auto-advance Replay 1 (Ball Tracking) -> Replay 2 (Behind Goal) -> Complete
-            if (!isReplayPausedRef.current && curTime >= totalDuration + 400) {
-              if (replayIndexRef.current === 1) {
+            if (!isReplayPausedRef.current && curTime >= totalDuration + 300) {
+              if (isOnlineMatch && !isSavedReplayModeRef.current && !savedReplayClip) {
+                // In online matches, 1 smooth broadcast replay clip completes quickly to maintain match momentum
+                stopReplayAndAdvance();
+              } else if (replayIndexRef.current === 1) {
                 // Advance to Replay 2 (Behind Goal Cam)
                 replayIndexRef.current = 2;
                 setReplayIndex(2);
@@ -6285,10 +6653,10 @@ export default function Stadium3DView({
           if (powerStatusTextRef.current) {
             if (isHoldingPowerRef.current) {
               if (pVal >= 88) {
-                powerStatusTextRef.current.textContent = '🔥 MAXIMUM ROCKET POWER!';
+                powerStatusTextRef.current.textContent = 'MAXIMUM ROCKET POWER!';
                 powerStatusTextRef.current.className = 'text-center text-[9px] sm:text-[10px] font-black text-rose-600 uppercase tracking-wide mt-1.5 animate-pulse';
               } else if (pVal >= 68) {
-                powerStatusTextRef.current.textContent = '⚡ SWEET SPOT! PERFECT LIFT & DIP';
+                powerStatusTextRef.current.textContent = 'SWEET SPOT! PERFECT LIFT & DIP';
                 powerStatusTextRef.current.className = 'text-center text-[9px] sm:text-[10px] font-black text-emerald-600 uppercase tracking-wide mt-1.5';
               } else if (pVal >= 35) {
                 powerStatusTextRef.current.textContent = 'BUILDING VELOCITY...';
@@ -6540,7 +6908,7 @@ export default function Stadium3DView({
               powerCurveScale = Math.pow((currentPower - 25) / 25, 1.25);
             }
 
-            const boostedCurveMag = Math.pow(absCurve, 1.08) * 38.0 * powerCurveScale;
+            const boostedCurveMag = Math.pow(absCurve, 1.08) * 22.0 * powerCurveScale;
             const curveAccelMag = curveSign * boostedCurveMag;
             curveAccelMagRef.current = curveAccelMag;
             curveAccelVecRef.current.copy(_scratchV3_3).multiplyScalar(curveAccelMag);
@@ -6630,8 +6998,8 @@ export default function Stadium3DView({
 
               // In-Flight Aftertouch (Real-time mid-air swerve & dip)
               if (aftertouchVecRef.current.x !== 0 || aftertouchVecRef.current.y !== 0) {
-                ballVelRef.current.x += aftertouchVecRef.current.x * 28.0 * dt;
-                ballVelRef.current.y += aftertouchVecRef.current.y * 16.0 * dt;
+                ballVelRef.current.x += aftertouchVecRef.current.x * 18.0 * dt;
+                ballVelRef.current.y += aftertouchVecRef.current.y * 14.0 * dt;
                 // Smooth progressive damping
                 aftertouchVecRef.current.x *= Math.max(0, 1 - 2.8 * dt);
                 aftertouchVecRef.current.y *= Math.max(0, 1 - 2.8 * dt);
@@ -6693,8 +7061,8 @@ export default function Stadium3DView({
               const speed = ballVelRef.current.length();
               const curveFactor = clampedCurve / MAX_CURVE_LIMIT;
               ball.rotation.x += dt * speed * 0.45; // Topspin / forward roll
-              ball.rotation.y += dt * curveFactor * 26.0; // Dynamic fast Magnus swerve spin around Y
-              ball.rotation.z += dt * curveFactor * speed * 0.45; // Lateral bank spin
+              ball.rotation.y += dt * curveFactor * 16.0; // Dynamic fast Magnus swerve spin around Y
+              ball.rotation.z += dt * curveFactor * speed * 0.35; // Lateral bank spin
             }
 
             // 1. Physical Field Players & Wall Collision (Attacking Teammates Strike on Goal vs Defending Clearances)
@@ -6883,26 +7251,19 @@ export default function Stadium3DView({
               const isAiAtStageCap = isAiShooter && !isOnlineMatch && !isPracticeMode && awayScoreRef.current >= getAiMaxGoalCap();
 
               // Physical reach envelope based on dynamic action type (ground reach vs jumping dive catch)
-              let reachRadiusX = isGroundedFromEarlyJump
-                ? 0.55
-                : isAiAtStageCap
-                ? 2.35
-                : isAiShooter
-                ? 1.70
-                : 1.45;
+              let reachRadiusX = isGroundedFromEarlyJump ? 0.55 : 1.35;
               let minReachY = 0.0;
-              let maxReachY = isGroundedFromEarlyJump
-                ? 1.65
-                : isAiAtStageCap
-                ? 2.78
-                : isAiShooter
-                ? 2.65
-                : 2.55;
+              let maxReachY = isGroundedFromEarlyJump ? 1.65 : 2.45;
 
-              if (gkPhys.hasJumped || gkPhys.actionType === 'jump' || isAiAtStageCap || isAiShooter) {
-                reachRadiusX = isAiAtStageCap ? 2.50 : isAiShooter ? 2.15 : 1.85; // Extended mid-air diving wingspan
+              if (isAiAtStageCap) {
+                // If AI is at or above goal cap (e.g. 3 goals in quick play), goalkeeper covers the full goal area
+                reachRadiusX = 4.2;
+                minReachY = 0.0;
+                maxReachY = 2.85;
+              } else if (gkPhys.hasJumped || gkPhys.actionType === 'jump') {
+                reachRadiusX = 1.65; // Extended mid-air diving wingspan
                 minReachY = Math.max(0, gkY - 0.15);
-                maxReachY = Math.min(2.78, (isAiAtStageCap ? 2.78 : isAiShooter ? 2.72 : (gkY + 2.25)));
+                maxReachY = Math.min(2.55, gkY + 2.10);
               }
 
               // Ball is within keeper's physical reach
@@ -6915,11 +7276,11 @@ export default function Stadium3DView({
                 const impactSpeed = ballVelRef.current.length();
                 const absCurve = Math.abs(currentCurveRef.current || 0);
                 const absCurveMag = Math.abs(curveAccelMagRef.current || 0);
-                const hasSignificantCurve = absCurve > 4.5 || absCurveMag > 5.0;
+                const hasSignificantCurve = absCurve > 3.5 || absCurveMag > 4.0;
 
                 // On high curve / bend or high speed shots, the ball is harder to hold
-                const isFingertipEdge = Math.abs(dx) > reachRadiusX * 0.70 || ballY > maxReachY - 0.22 || (hasSignificantCurve && Math.abs(dx) > reachRadiusX * 0.45);
-                const isSpill = !isAiShooter && !isAiAtStageCap && (
+                const isFingertipEdge = Math.abs(dx) > reachRadiusX * 0.68 || ballY > maxReachY - 0.25 || (hasSignificantCurve && Math.abs(dx) > reachRadiusX * 0.45);
+                const isSpill = !isAiAtStageCap && (
                   (gkPhys.flawType === 'fingertip_spill' && Math.random() < 0.75) ||
                   (hasSignificantCurve && isFingertipEdge && Math.random() < 0.50) ||
                   (impactSpeed > 22.0 && isFingertipEdge && Math.random() < 0.40)
@@ -7080,17 +7441,30 @@ export default function Stadium3DView({
               const enteredInsideGoal = Math.abs(crossX) <= 3.92 && crossY <= 2.65 && crossY >= 0.02;
 
               if (enteredInsideGoal) {
-                isGoalScoredRef.current = true;
-                shotPhaseRef.current = 'finished';
-                shotFinishedTimeRef.current = now;
-                shotCurveRef.current = null;
-                curveAccelVecRef.current.set(0, 0, 0);
-                flightPointsRef.current = [];
-                triggerShotOutcome('GOAL');
+                const isAiAtStageCap = currentTurnRef.current === 'ai' && !isOnlineMatch && !isPracticeMode && awayScoreRef.current >= getAiMaxGoalCap();
+                if (isAiAtStageCap) {
+                  // Ironclad safeguard: AI cannot exceed goal cap under any circumstances
+                  isGoalScoredRef.current = false;
+                  shotPhaseRef.current = 'finished';
+                  shotFinishedTimeRef.current = now;
+                  shotCurveRef.current = null;
+                  curveAccelVecRef.current.set(0, 0, 0);
+                  flightPointsRef.current = [];
+                  ballVelRef.current.set(crossX > 0 ? 5.5 : -5.5, 2.5, 12.0);
+                  triggerShotOutcome('SAVED OFF THE LINE');
+                } else {
+                  isGoalScoredRef.current = true;
+                  shotPhaseRef.current = 'finished';
+                  shotFinishedTimeRef.current = now;
+                  shotCurveRef.current = null;
+                  curveAccelVecRef.current.set(0, 0, 0);
+                  flightPointsRef.current = [];
+                  triggerShotOutcome('GOAL');
 
-                // Maintain strong forward trajectory so ball buries deep into the back of net
-                if (ballVelRef.current.z > -8.0) {
-                  ballVelRef.current.z = -8.0;
+                  // Maintain strong forward trajectory so ball buries deep into the back of net
+                  if (ballVelRef.current.z > -8.0) {
+                    ballVelRef.current.z = -8.0;
+                  }
                 }
               } else {
                 isGoalScoredRef.current = false;
@@ -7107,13 +7481,25 @@ export default function Stadium3DView({
               // Direct boundary safety check: if ball is behind goal line and within goal opening, trigger GOAL
               const insideGoalNow = Math.abs(ballPosRef.current.x) <= 3.92 && ballPosRef.current.y <= 2.65 && ballPosRef.current.y >= 0.02;
               if (insideGoalNow && (shotPhaseRef.current === 'flying' || shotPhaseRef.current === 'hit_post' || shotOutcomeRef.current === null || shotOutcomeRef.current === 'HIT THE WOODWORK')) {
-                isGoalScoredRef.current = true;
-                shotPhaseRef.current = 'finished';
-                shotFinishedTimeRef.current = now;
-                shotCurveRef.current = null;
-                curveAccelVecRef.current.set(0, 0, 0);
-                flightPointsRef.current = [];
-                triggerShotOutcome('GOAL');
+                const isAiAtStageCap = currentTurnRef.current === 'ai' && !isOnlineMatch && !isPracticeMode && awayScoreRef.current >= getAiMaxGoalCap();
+                if (isAiAtStageCap) {
+                  isGoalScoredRef.current = false;
+                  shotPhaseRef.current = 'finished';
+                  shotFinishedTimeRef.current = now;
+                  shotCurveRef.current = null;
+                  curveAccelVecRef.current.set(0, 0, 0);
+                  flightPointsRef.current = [];
+                  ballVelRef.current.set(ballPosRef.current.x > 0 ? 5.5 : -5.5, 2.5, 12.0);
+                  triggerShotOutcome('SAVED OFF THE LINE');
+                } else {
+                  isGoalScoredRef.current = true;
+                  shotPhaseRef.current = 'finished';
+                  shotFinishedTimeRef.current = now;
+                  shotCurveRef.current = null;
+                  curveAccelVecRef.current.set(0, 0, 0);
+                  flightPointsRef.current = [];
+                  triggerShotOutcome('GOAL');
+                }
               }
             }
 
@@ -7229,19 +7615,26 @@ export default function Stadium3DView({
           if (shotPhaseRef.current === 'finished' && shotFinishedTimeRef.current > 0) {
             const elapsedFinished = now - shotFinishedTimeRef.current;
             const isGoal = isGoalScoredRef.current || shotOutcomeRef.current === 'GOAL';
-            const waitTimeBeforeReplay = isGoal ? 3500 : 650; // 3.5s celebration delay on goal before triggering replay camera
+            const isKotH = gameMode === 'king_of_the_hill' || Boolean(onKingOfTheHillShotComplete);
+            const waitTimeBeforeReplay = isKotH
+              ? (isGoal ? 2000 : 1300)
+              : (isGoal ? 3500 : 650); // 3.5s celebration delay on goal before triggering replay camera
 
             if (elapsedFinished > waitTimeBeforeReplay && !hasTriggeredReplayForShotRef.current) {
               hasTriggeredReplayForShotRef.current = true;
               const isAnyPenaltyMode = isPenaltyTraining || isPenaltyShootoutRef.current || penaltyShootout.isActive || isPenaltyTrainingRef.current;
-              if (!isPracticeMode && !isAnyPenaltyMode && isGoal && recordedReplayFramesRef.current.length > 5) {
+              if (!isPracticeMode && !isAnyPenaltyMode && !isKotH && isGoal && recordedReplayFramesRef.current.length > 5) {
                 startReplaySequence();
               } else {
                 advanceToNextTurn();
               }
-            } else if (elapsedFinished > 1400 && !isGoalScoredRef.current && shotOutcomeRef.current !== 'GOAL') {
-              // Failsafe: If turn advance got stalled for non-goal outcome, force instant reset
-              resetToDefaultState();
+            } else if (elapsedFinished > (isKotH ? 2400 : 1400) && !isGoalScoredRef.current && shotOutcomeRef.current !== 'GOAL') {
+              // Failsafe: If turn advance got stalled for non-goal outcome, force instant reset or advance
+              if (isKotH) {
+                advanceToNextTurn();
+              } else {
+                resetToDefaultState();
+              }
             }
           }
         }
@@ -7476,15 +7869,25 @@ export default function Stadium3DView({
       transitionStartTimeRef.current = performance.now();
       isTransitioningCamRef.current = true;
     } else {
-      startCamPosRef.current.copy(camera.position);
-      startCamLookAtRef.current.copy(controls.target);
-      startCamFovRef.current = camera.fov;
-      targetCamPosRef.current.copy(camPos);
-      targetCamLookAtRef.current.copy(targetPos);
-      targetCamFovRef.current = targetFov;
-      camTransitionDurationRef.current = 650;
-      transitionStartTimeRef.current = performance.now();
-      isTransitioningCamRef.current = true;
+      const distToTarget = camera.position.distanceTo(camPos);
+      if (distToTarget < 0.05) {
+        isTransitioningCamRef.current = false;
+        camera.position.copy(camPos);
+        controls.target.copy(targetPos);
+        camera.fov = targetFov;
+        camera.updateProjectionMatrix();
+        controls.update();
+      } else {
+        startCamPosRef.current.copy(camera.position);
+        startCamLookAtRef.current.copy(controls.target);
+        startCamFovRef.current = camera.fov;
+        targetCamPosRef.current.copy(camPos);
+        targetCamLookAtRef.current.copy(targetPos);
+        targetCamFovRef.current = targetFov;
+        camTransitionDurationRef.current = 650;
+        transitionStartTimeRef.current = performance.now();
+        isTransitioningCamRef.current = true;
+      }
     }
 
     // Soccer Ball Mesh (0.3015m radius - 10% smaller)
@@ -7816,7 +8219,7 @@ export default function Stadium3DView({
     slingshotGroupRef.current = slingshotMesh;
 
     targetRingRef.current = null;
-  }, [country, opponentCountry, currentOpponentCountry, fkDistance, fkXOffset, targetCorner, wallSize, currentTurn, isPenaltyTraining, penaltyShootout.isActive, freeKickEpoch]);
+  }, [country, opponentCountry, currentOpponentCountry, fkDistance, fkXOffset, targetCorner, wallSize, currentTurn, isPenaltyTraining, penaltyShootout.isActive, freeKickEpoch, kothTurnKey]);
 
   // Handle Controls Auto-Rotate Toggle
   useEffect(() => {
@@ -7891,7 +8294,7 @@ export default function Stadium3DView({
 
       {/* Full-Screen Match Results Screen Overlay on Game Over */}
       <AnimatePresence>
-        {showResultsModal && isGameOver && (
+        {showResultsModal && isGameOver && !isKingOfTheHill && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -8041,12 +8444,12 @@ export default function Stadium3DView({
       </AnimatePresence>
 
       {/* Top Header Layout Bar: Dynamically stretches across the screen based on screen width */}
-      {!isReplayActive && !showResultsModal && (
+      {!isReplayActive && !showResultsModal && !sceneLoading && (
         <header className="absolute top-0 left-0 right-0 w-full p-2 sm:p-3 md:p-4 lg:p-5 z-20 pointer-events-none flex flex-col md:flex-row items-start md:items-start justify-between gap-2 md:gap-4">
         
         {/* Left Column: Scoreboard or Practice Drill HUD + Match Outcome Banner */}
         <div className="flex flex-col items-start gap-1.5 sm:gap-2 md:gap-2.5 pointer-events-auto">
-          {isSurvival ? (
+          {isKingOfTheHill ? null : isSurvival ? (
             <div id="survival-hud-container" className="flex flex-col items-start gap-1.5 sm:gap-2">
               {/* TOP: Health Score & Dual Player Lives Card (User & Opponent with Flags, Names, and Health Hearts) */}
               <div id="survival-health-score-card" className="flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5 sm:gap-2 bg-white/95 backdrop-blur-xs text-black border-[2.5px] md:border-[3px] border-black shadow-[0_3px_0_0_#000] md:shadow-[0_4px_0_0_#000] rounded-[14px] sm:rounded-[16px] p-1.5 sm:p-2 select-none min-w-[260px] sm:min-w-[320px]">
@@ -8186,7 +8589,7 @@ export default function Stadium3DView({
                     STREAK
                   </span>
                   <span className="bg-amber-400 text-black font-black text-xs sm:text-xs md:text-sm px-2 sm:px-2.5 md:px-2.5 py-0.5 rounded-[6px] md:rounded-[7px] border-[1.5px] md:border-[1.5px] border-black font-mono shadow-2xs text-center">
-                    {survivalStreak} 🔥
+                    {survivalStreak}
                   </span>
                 </div>
               </div>
@@ -8451,8 +8854,9 @@ export default function Stadium3DView({
             </div>
           )}
 
-          {/* 15s Play-In Action Timer Badge (Top-Left Gameplay Clock) - Only active in Online Matches */}
+          {/* 10s Play-In Action Timer Badge (Top-Left Gameplay Clock) - Only active in Online Matches (King of the Hill has its own scoreboard timer) */}
           {isPlayInFeatureActive &&
+            !isKingOfTheHill &&
             currentTurn === 'player' &&
             shotPhaseRef.current === 'idle' &&
             setupStep !== 'kicking' &&
@@ -8464,9 +8868,9 @@ export default function Stadium3DView({
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -6, scale: 0.95 }}
                 className={`flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-[12px] sm:rounded-[14px] md:rounded-[16px] border-[2.5px] md:border-[3px] border-black shadow-[0_3px_0_0_#000] md:shadow-[0_4px_0_0_#000] select-none font-mono transition-all ${
-                  playInTimer <= 5
+                  playInTimer <= 3
                     ? 'bg-rose-500 text-white animate-pulse'
-                    : playInTimer <= 9
+                    : playInTimer <= 6
                     ? 'bg-amber-400 text-black'
                     : 'bg-emerald-400 text-black'
                 }`}
@@ -8499,7 +8903,7 @@ export default function Stadium3DView({
                   </span>
                 </div>
                 <span className="text-[9px] sm:text-[10px] md:text-[11px] font-mono font-black uppercase tracking-tight text-amber-950 bg-amber-300/90 px-1.5 sm:px-2 py-0.5 rounded-[5px] md:rounded-[6px] border border-amber-950/20 mt-0.5 leading-tight whitespace-nowrap">
-                  💰 {t('wager.prizePot', 'POT')}: {wagerPrizePot.toLocaleString()} {t('common.coins', 'COINS')}
+                  {t('wager.prizePot', 'POT')}: {wagerPrizePot.toLocaleString()} {t('common.coins', 'COINS')}
                 </span>
               </div>
             </div>
@@ -8526,11 +8930,19 @@ export default function Stadium3DView({
 
       {/* UNIFIED OUTCOME STICKER BANNER (Slides in from the left and stays on the left) */}
       <AnimatePresence>
-        {!isReplayActive && !showResultsModal && !isPracticeMode && !isSurvival && shotOutcome && (() => {
+        {!isReplayActive && !showResultsModal && !isPracticeMode && !isSurvival && !isKingOfTheHill && shotOutcome && (() => {
           const outcomeInfo = getOutcomeSticker(shotOutcome);
 
           return (
-            <div className="fixed top-18 sm:top-22 md:top-26 left-3 sm:left-4 md:left-6 z-50 pointer-events-none select-none">
+            <div
+              className={`fixed left-3 sm:left-4 md:left-6 z-50 pointer-events-none select-none ${
+                isKingOfTheHill
+                  ? 'top-48 sm:top-50 md:top-52'
+                  : penaltyShootout.isActive
+                  ? 'top-32 sm:top-36 md:top-40'
+                  : 'top-24 sm:top-28 md:top-32'
+              }`}
+            >
               <motion.div
                 key={shotOutcome}
                 initial={{ opacity: 0, x: -140, scale: 0.85, rotate: -4 }}
@@ -8755,29 +9167,68 @@ export default function Stadium3DView({
       </AnimatePresence>
 
       {/* Bottom Control Bar: Slingshot Launcher & In-Flight Aftertouch Control HUD */}
-      {!isReplayActive && !showResultsModal && (
+      {!isReplayActive && !showResultsModal && !isKothGameOver && (
         <div className="absolute bottom-2.5 left-2.5 sm:bottom-3.5 sm:left-3.5 md:bottom-4.5 md:left-4.5 z-30 pointer-events-none flex flex-col items-start gap-1.5">
         
         {/* Slingshot Launcher & Opponent Status Cards */}
         <div className="pointer-events-auto shrink-0">
           {(isOnlineMatch ? !isMyOnlineTurn : currentTurn === 'ai') ? (
-            <div className="bg-purple-950/90 text-white border-[2.5px] sm:border-[3px] md:border-[3.5px] border-black rounded-[16px] sm:rounded-[20px] md:rounded-[22px] p-2 sm:p-3 md:p-3.5 shadow-[0_3px_0_0_#000] sm:shadow-[0_4px_0_0_#000] md:shadow-[0_5px_0_0_#000] min-w-[190px] sm:min-w-[250px] md:min-w-[280px] flex items-center gap-2 sm:gap-2.5 md:gap-3 select-none backdrop-blur-md animate-in fade-in duration-200">
-              <div className="relative shrink-0">
-                <div className="w-7 h-7 sm:w-8 sm:h-8 md:w-9 md:h-9 rounded-full bg-purple-600 border-[1.5px] md:border-[2px] border-black flex items-center justify-center font-black text-[10px] sm:text-xs md:text-xs text-amber-300 z-10 relative">
-                  {isOnlineMatch ? '1v1' : 'AI'}
+            isKingOfTheHill ? (
+              /* King of the Hill AI Shooter Status Card in Bottom Left */
+              <motion.div
+                key="koth-ai-shooter-card"
+                initial={{ opacity: 0, y: 12, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 12, scale: 0.96 }}
+                className="bg-white/95 backdrop-blur-md text-black border-[2.5px] sm:border-[3px] border-black rounded-[18px] sm:rounded-[20px] p-2.5 sm:p-3 shadow-[0_4px_0_0_#000] min-w-[210px] xs:min-w-[230px] sm:min-w-[260px] flex items-center gap-2.5 sm:gap-3 select-none pointer-events-auto"
+              >
+                <div className="relative shrink-0">
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-amber-400 border-[2px] border-black flex items-center justify-center font-black text-sm sm:text-base text-black shadow-2xs overflow-hidden">
+                    {country?.code ? (
+                      <LazyFlagImage
+                        src={getFlagUrl(country.code)}
+                        alt={country.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <Crown className="w-4 h-4 fill-black text-black" />
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] sm:text-xs font-black text-black uppercase tracking-wider truncate max-w-[130px] sm:max-w-[160px]">
+                      {kothShooterName || country?.name || 'CONTENDER'}
+                    </span>
+                    <span className="bg-amber-400 text-black text-[8.5px] sm:text-[9px] px-1.5 py-0.2 rounded-full border border-black font-black shrink-0 whitespace-nowrap">
+                      BALL {(kothBallIndex ?? 0) + 1}/5
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[9px] sm:text-[10px] font-bold text-slate-600 uppercase tracking-wide mt-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping shrink-0" />
+                    <span className="truncate">{aiStepStatus || 'TAKING FREE KICK...'}</span>
+                  </div>
+                </div>
+              </motion.div>
+            ) : (
+              <div className="bg-purple-950/90 text-white border-[2.5px] sm:border-[3px] md:border-[3.5px] border-black rounded-[16px] sm:rounded-[20px] md:rounded-[22px] p-2 sm:p-3 md:p-3.5 shadow-[0_3px_0_0_#000] sm:shadow-[0_4px_0_0_#000] md:shadow-[0_5px_0_0_#000] min-w-[190px] sm:min-w-[250px] md:min-w-[280px] flex items-center gap-2 sm:gap-2.5 md:gap-3 select-none backdrop-blur-md animate-in fade-in duration-200">
+                <div className="relative shrink-0">
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 md:w-9 md:h-9 rounded-full bg-purple-600 border-[1.5px] md:border-[2px] border-black flex items-center justify-center font-black text-[10px] sm:text-xs md:text-xs text-amber-300 z-10 relative">
+                    {isOnlineMatch ? '1v1' : 'AI'}
+                  </div>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[8px] sm:text-[9px] md:text-[10px] font-black text-amber-300 uppercase tracking-widest flex items-center gap-1">
+                    <span>{isOnlineMatch ? `${opponentCountry?.name || t('hud.oppTurn', 'OPPONENT')} ${t('hud.turn', 'TURN')}` : `${t('hud.oppTurn', 'AI OPPONENT TURN')}`}</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                  </span>
+                  <span className="text-[9px] sm:text-xs md:text-xs font-black text-white uppercase tracking-wider">
+                    {isOnlineMatch ? t('online.waitingOpponent', 'WAITING FOR OPPONENT TO STRIKE...') : (aiStepStatus || t('hud.aiStriking', 'PREPARING FREE KICK...'))}
+                  </span>
                 </div>
               </div>
-              <div className="flex flex-col">
-                <span className="text-[8px] sm:text-[9px] md:text-[10px] font-black text-amber-300 uppercase tracking-widest flex items-center gap-1">
-                  <span>{isOnlineMatch ? `${opponentCountry?.name || t('hud.oppTurn', 'OPPONENT')} ${t('hud.turn', 'TURN')}` : `${t('hud.oppTurn', 'AI OPPONENT TURN')}`}</span>
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-                </span>
-                <span className="text-[9px] sm:text-xs md:text-xs font-black text-white uppercase tracking-wider">
-                  {isOnlineMatch ? t('online.waitingOpponent', 'WAITING FOR OPPONENT TO STRIKE...') : (aiStepStatus || t('hud.aiStriking', 'PREPARING FREE KICK...'))}
-                </span>
-              </div>
-            </div>
-          ) : setupStep === 'aim' ? (
+            )
+          ) : currentTurn === 'player' && (!isOnlineMatch || isMyOnlineTurn) && setupStep === 'aim' && !isKingOfTheHill ? (
             /* Bottom Left Sleek Compact Aim Direction Card */
             <motion.div
               key="aim-card"
@@ -8814,7 +9265,7 @@ export default function Stadium3DView({
                 {t('hud.releaseToStrikeInstruction', 'HOLD SPACEBAR / SCREEN • RELEASE TO STRIKE')}
               </div>
             </motion.div>
-          ) : setupStep === 'power' ? (
+          ) : currentTurn === 'player' && (!isOnlineMatch || isMyOnlineTurn) && setupStep === 'power' ? (
             /* Bottom Left Sleek Power Meter Card */
             <motion.div
               key="power-card"
@@ -8897,7 +9348,9 @@ export default function Stadium3DView({
 
       {/* Floating Drag Power Badge Over Pitch during Aim Drag */}
       {currentTurn === 'player' && shotPhaseRef.current === 'idle' && setupStep === 'aim' && isSlingshotDragging && (
-        <div className="absolute top-16 sm:top-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none bg-black/90 backdrop-blur-md border-[2.5px] border-white text-white rounded-full px-4 py-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.5)] flex items-center gap-2 animate-in fade-in zoom-in-95 duration-100">
+        <div className={`absolute left-1/2 -translate-x-1/2 z-30 pointer-events-none bg-black/90 backdrop-blur-md border-[2.5px] border-white text-white rounded-full px-4 py-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.5)] flex items-center gap-2 animate-in fade-in zoom-in-95 duration-100 ${
+          isKingOfTheHill ? 'top-40 sm:top-44' : 'top-24 sm:top-28'
+        }`}>
           <span className="text-[10px] sm:text-xs font-black tracking-wider text-amber-400 uppercase">SHOT POWER</span>
           <span ref={floatingDragPowerTextRef} className="text-sm sm:text-base font-black text-white">
             {currentPowerRef.current ?? 20}%
@@ -8906,7 +9359,7 @@ export default function Stadium3DView({
       )}
 
       {/* Bottom Right Controls: Mode-Specific Exit Button */}
-      {!isReplayActive && !showResultsModal && (
+      {!isReplayActive && !showResultsModal && !isKothGameOver && (
         <div className="absolute bottom-2.5 right-2.5 sm:bottom-3.5 sm:right-3.5 md:bottom-4.5 md:right-4.5 z-30 pointer-events-auto flex items-center gap-1.5 sm:gap-2">
           <button
             onClick={(e) => {
@@ -8926,6 +9379,8 @@ export default function Stadium3DView({
                 ? t('survival.endSurvival', 'END SURVIVAL')
                 : isOnlineMatch
                 ? t('online.leaveMatch', 'LEAVE MATCH')
+                : gameMode === 'king_of_the_hill'
+                ? 'EXIT MATCH'
                 : t('hud.exitMatch', 'EXIT GAME')}
             </span>
           </button>
@@ -8938,7 +9393,7 @@ export default function Stadium3DView({
           const config = (() => {
             if (isWorldCupMatch) {
               return {
-                badge: `🏆 ${t('menu.worldCup', 'FIFA WORLD CUP')}`,
+                badge: t('menu.worldCup', 'FIFA WORLD CUP'),
                 badgeColor: 'bg-amber-400 text-black',
                 title: t('modal.forfeitMatchTitle', 'FORFEIT MATCH?'),
                 subtitle: t('modal.forfeitMatchSub', 'Leaving now counts as an automatic defeat.'),
@@ -8948,7 +9403,7 @@ export default function Stadium3DView({
             if (isWagerMatch) {
               const prizePot = (onlineMatchRoom?.prizePot || wagerPrizePot || 0);
               return {
-                badge: `⚔️ ${t('wager.duel', 'COIN WAGER')} • ${prizePot.toLocaleString()}`,
+                badge: `${t('wager.duel', 'COIN WAGER')} • ${prizePot.toLocaleString()}`,
                 badgeColor: 'bg-yellow-400 text-black',
                 title: t('wager.surrenderTitle', 'SURRENDER WAGER?'),
                 subtitle: `${t('wager.surrenderSub', 'Forfeiting will surrender your stake:')} ${wagerEntryFee.toLocaleString()} ${t('common.coins', 'COINS')}`,
@@ -8957,7 +9412,7 @@ export default function Stadium3DView({
             }
             if (isSurvival) {
               return {
-                badge: `🔥 ${t('survival.streak', 'SURVIVAL ARENA')}`,
+                badge: t('survival.streak', 'SURVIVAL ARENA'),
                 badgeColor: 'bg-rose-500 text-white',
                 title: t('survival.endSurvivalTitle', 'END SURVIVAL?'),
                 subtitle: `${t('survival.currentStreak', 'Current streak:')} ${survivalStreak} ${t('common.goals', 'goals')}. ${t('survival.concludeSub', 'Run will conclude immediately.')}`,
@@ -8966,7 +9421,7 @@ export default function Stadium3DView({
             }
             if (isOnlineMatch) {
               return {
-                badge: `⚡ ${t('online.matchTitle', 'ONLINE DUEL')}`,
+                badge: t('online.matchTitle', 'ONLINE DUEL'),
                 badgeColor: 'bg-cyan-400 text-black',
                 title: t('online.leaveMatchTitle', 'LEAVE MATCH?'),
                 subtitle: t('online.leaveMatchSub', 'Disconnecting will award a forfeit win to your opponent.'),
@@ -8975,15 +9430,24 @@ export default function Stadium3DView({
             }
             if (isPracticeMode) {
               return {
-                badge: `🎯 ${t('menu.practice', 'PRACTICE DRILLS')}`,
+                badge: t('menu.practice', 'PRACTICE DRILLS'),
                 badgeColor: 'bg-emerald-400 text-black',
                 title: t('practice.exitTitle', 'EXIT TRAINING?'),
                 subtitle: t('practice.exitSub', 'Return to the main menu at any time.'),
                 confirmText: t('common.exit', 'EXIT'),
               };
             }
+            if (gameMode === 'king_of_the_hill') {
+              return {
+                badge: 'KING OF THE HILL',
+                badgeColor: 'bg-amber-400 text-black',
+                title: 'LEAVE MATCH?',
+                subtitle: 'Leaving now will forfeit your King of the Hill shootout and return to the menu.',
+                confirmText: 'LEAVE MATCH',
+              };
+            }
             return {
-              badge: `⚽ ${t('menu.quickPlay', 'QUICK MATCH')}`,
+              badge: t('menu.quickPlay', 'QUICK MATCH'),
               badgeColor: 'bg-sky-400 text-black',
               title: t('hud.exitMatch', 'QUIT MATCH?'),
               subtitle: t('modal.quitMatchSub', 'Current match progress will not be saved.'),

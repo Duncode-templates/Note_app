@@ -1,6 +1,6 @@
 {
   "name": "Free Kick Legends",
-  "description": "3D arcade football free-kick experience featuring a 500-Level Intelligent Target Smash & Scenario Campaign with AI Comeback matches, Survival 3-Lives Mode, Arcade Superpowers, Dynamic Wind, World Cup Tournament, and Online 1v1 Multiplayer.",
+  "description": "3D arcade football free-kick experience featuring Sudden Death: King of the Hill 4-8 Player Live Elimination Shootouts, 500-Level Campaign, Coin Wager Arena, Survival 3-Lives Mode, World Cup Tournament, and Online 1v1 Multiplayer.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

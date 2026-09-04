@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Target, Trophy, Star, Shield, ArrowRight, Play, Flame } from 'lucide-react';
+import { X, Target, Trophy, Star, Shield, ArrowRight, Play, Flame, Lock } from 'lucide-react';
 import { TARGET_SMASH_STAGES } from '../data/targetSmashData';
 import { TargetSmashStage } from '../types';
 import { useTranslation } from '../utils/i18n';
@@ -124,7 +124,7 @@ export default function TargetSmashHubModal({
 
                     {!isUnlocked && (
                       <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-[14px]">
-                        <span className="text-xs">🔒</span>
+                        <Lock className="w-4 h-4 text-white" />
                       </div>
                     )}
                   </button>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Flame, Heart, Trophy, ArrowRight, Globe, HelpCircle, ArrowLeft, Shield } from 'lucide-react';
+import { X, Flame, Heart, Trophy, ArrowRight, Globe, HelpCircle, ArrowLeft } from 'lucide-react';
 import { crazyGamesSDK } from '../utils/crazyGamesSDK';
 import { useTranslation } from '../utils/i18n';
 
@@ -12,6 +12,40 @@ interface SurvivalHubModalProps {
   bestStreak: number;
 }
 
+const SURVIVAL_GUIDE_KEY = 'fkl_survival_guide_seen_v1';
+
+function checkHasSeenRules(): boolean {
+  try {
+    const sdkVal = crazyGamesSDK.getItemSync(SURVIVAL_GUIDE_KEY);
+    if (sdkVal === 'true' || sdkVal === '1') return true;
+  } catch {}
+
+  if (typeof window !== 'undefined') {
+    try {
+      if (window.localStorage?.getItem(SURVIVAL_GUIDE_KEY) === 'true') return true;
+    } catch {}
+    try {
+      if (window.sessionStorage?.getItem(SURVIVAL_GUIDE_KEY) === 'true') return true;
+    } catch {}
+  }
+  return false;
+}
+
+function persistRulesSeen(): void {
+  try {
+    crazyGamesSDK.setItem(SURVIVAL_GUIDE_KEY, 'true');
+  } catch {}
+
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage?.setItem(SURVIVAL_GUIDE_KEY, 'true');
+    } catch {}
+    try {
+      window.sessionStorage?.setItem(SURVIVAL_GUIDE_KEY, 'true');
+    } catch {}
+  }
+}
+
 export default function SurvivalHubModal({
   isOpen,
   onClose,
@@ -21,35 +55,31 @@ export default function SurvivalHubModal({
 }: SurvivalHubModalProps) {
   const { t } = useTranslation();
   const [view, setView] = useState<'rules' | 'mode_selection'>(() => {
-    try {
-      const seen = crazyGamesSDK.getItemSync('fkl_survival_guide_seen_v1');
-      return seen === 'true' ? 'mode_selection' : 'rules';
-    } catch {
-      return 'rules';
-    }
+    return checkHasSeenRules() ? 'mode_selection' : 'rules';
   });
 
-  // When modal opens, only show rules if not previously seen (otherwise go straight to mode selection)
+  // When modal opens: if user has already seen the rules before, go straight to mode selection.
+  // If not seen yet, show rules on this single first occurrence and immediately mark as seen.
   useEffect(() => {
     if (isOpen) {
-      try {
-        const seen = crazyGamesSDK.getItemSync('fkl_survival_guide_seen_v1');
-        if (seen === 'true') {
-          setView('mode_selection');
-        } else {
-          setView('rules');
-        }
-      } catch {
+      if (checkHasSeenRules()) {
+        setView('mode_selection');
+      } else {
         setView('rules');
+        // Immediately persist so the user is never shown the rules modal automatically again
+        persistRulesSeen();
       }
     }
   }, [isOpen]);
 
   const handleContinueFromRules = () => {
-    try {
-      crazyGamesSDK.setItem('fkl_survival_guide_seen_v1', 'true');
-    } catch {}
+    persistRulesSeen();
     setView('mode_selection');
+  };
+
+  const handleClose = () => {
+    persistRulesSeen();
+    onClose();
   };
 
   if (!isOpen) return null;
@@ -74,7 +104,7 @@ export default function SurvivalHubModal({
         >
           {/* Close Button */}
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="absolute top-4 right-4 text-black hover:bg-rose-500 hover:text-white font-black text-xl w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-full border-2 border-black transition-all cursor-pointer bg-slate-100 shadow-2xs z-10"
             aria-label="Close"
           >

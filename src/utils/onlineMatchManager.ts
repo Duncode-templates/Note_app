@@ -24,7 +24,17 @@ import {
   Unsubscribe
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { OnlinePlayer, OnlineMatchRoom, OnlineShotPayload, OnlineGKPayload, OnlineTurnAdvancePayload, OnlineShotOutcomePayload } from '../types';
+import {
+  OnlinePlayer,
+  OnlineMatchRoom,
+  OnlineShotPayload,
+  OnlineGKPayload,
+  OnlineTurnAdvancePayload,
+  OnlineShotOutcomePayload,
+  KingOfTheHillMatchState,
+  KingOfTheHillContender,
+  KingShotOutcome,
+} from '../types';
 import {
   getRandomBotProfile,
   getBotProfileForWagerTier,
@@ -44,6 +54,15 @@ class OnlineMatchManager {
   private firestoreUnsub: Unsubscribe | null = null;
   private listeners: Map<string, Set<OnlineEventCallback>> = new Map();
   private lastProcessedShotTimestamp: number = 0;
+  private lastProcessedShotId: string = '';
+  private lastProcessedTurnNumber: number = 0;
+  private lastHeartbeatTime: number = 0;
+  private lastAimSyncTime: number = 0;
+  private lastAimProgress: number = -1;
+  private lastCurveAmount: number = -999;
+  private lastAftertouchSyncTime: number = 0;
+  private lastSwerve: number = -999;
+  private lastDip: number = -999;
   private matchmakingInterval: any = null;
   private botFallbackTimer: any = null;
 
@@ -209,11 +228,31 @@ class OnlineMatchManager {
         this.stopHeartbeat();
         return;
       }
+      // During active gameplay, avoid spamming Firestore every 3 seconds to preserve bandwidth and eliminate frame jitter
+      if (this.currentRoom.status === 'playing') {
+        const now = Date.now();
+        if (now - this.lastHeartbeatTime < 20000) {
+          return;
+        }
+        this.lastHeartbeatTime = now;
+      }
       try {
         const roomRef = doc(db, 'rooms', roomId);
-        await updateDoc(roomRef, {
-          updatedAt: Date.now(),
-        });
+        if (this.currentRoom?.gameMode === 'king_of_the_hill' && Array.isArray(this.currentRoom?.players)) {
+          const now = Date.now();
+          const updatedPlayers = this.currentRoom.players.map((p) =>
+            p.id === this.localPlayerId ? { ...p, lastSeen: now } : p
+          );
+          this.currentRoom.players = updatedPlayers;
+          await updateDoc(roomRef, {
+            updatedAt: now,
+            players: updatedPlayers,
+          });
+        } else {
+          await updateDoc(roomRef, {
+            updatedAt: Date.now(),
+          });
+        }
       } catch {}
     }, 3000);
   }
@@ -235,17 +274,30 @@ class OnlineMatchManager {
       const roomRef = doc(db, 'rooms', roomId);
       this.firestoreUnsub = onSnapshot(roomRef, (snapshot) => {
         if (!snapshot.exists()) {
-          if (this.currentRoom && this.currentRoom.status !== 'waiting') {
+          this.emit('room_not_found', { roomId, message: 'This match room no longer exists.' });
+          if (this.currentRoom) {
             this.currentRoom.status = 'opponent_left';
             this.currentRoom.isOpponentDisconnected = true;
-            this.emit('opponent_disconnected', { message: 'Room has been closed or opponent left' });
-            this.emit('opponent_left', { message: 'Opponent has left the room' });
+            this.emit('opponent_disconnected', { message: 'Room has been closed or does not exist.' });
+            this.emit('opponent_left', { message: 'Room has been closed or does not exist.' });
           }
           return;
         }
 
         const roomData = snapshot.data() as any;
         if (!roomData) return;
+
+        if (roomData.status === 'cancelled' || roomData.status === 'deleted') {
+          this.emit('room_not_found', { roomId, message: 'This match was cancelled or closed.' });
+          this.emit('room_cancelled', { roomId });
+          if (this.currentRoom) {
+            this.currentRoom.status = 'cancelled';
+            this.currentRoom.isOpponentDisconnected = true;
+            this.emit('opponent_disconnected', { message: 'This match was cancelled by the host.' });
+          }
+          return;
+        }
+
         const isHost = this.localPlayerId === roomData.host?.id;
 
         // Preserve active in-memory timer progression across snapshot triggers
@@ -298,6 +350,10 @@ class OnlineMatchManager {
           countdownStartTime: roomData.countdownStartTime ?? null,
           rematchRequestedBy: roomData.rematchRequestedBy ?? null,
           isOpponentDisconnected: Boolean(roomData.isOpponentDisconnected || roomData.status === 'opponent_left' || roomData.status === 'cancelled'),
+          isPublic: roomData.isPublic ?? true,
+          maxPlayers: roomData.maxPlayers || (roomData.gameMode === 'king_of_the_hill' ? 4 : 2),
+          players: Array.isArray(roomData.players) ? roomData.players : (roomData.guest ? [roomData.host, roomData.guest] : [roomData.host]),
+          kothState: roomData.kothState || null,
         };
 
         const prevRoom = this.currentRoom;
@@ -305,6 +361,34 @@ class OnlineMatchManager {
 
         // Emit general room update
         this.emit('room_updated', { room: updatedRoom });
+
+        // King of the Hill real-time lobby & match state synchronization
+        if (updatedRoom.gameMode === 'king_of_the_hill') {
+          if (prevRoom && prevRoom.host?.id && updatedRoom.host?.id && prevRoom.host.id !== updatedRoom.host.id) {
+            this.emit('host_transferred', {
+              newHost: updatedRoom.host,
+              previousHostId: prevRoom.host.id,
+              room: updatedRoom,
+            });
+          }
+          if (updatedRoom.players && (!prevRoom?.players || JSON.stringify(prevRoom.players) !== JSON.stringify(updatedRoom.players))) {
+            this.emit('koth_lobby_updated', { players: updatedRoom.players, room: updatedRoom });
+          }
+          if (updatedRoom.status === 'playing' && prevRoom?.status !== 'playing' && updatedRoom.kothState) {
+            this.emit('koth_match_started', { kothState: updatedRoom.kothState, room: updatedRoom });
+          }
+          if (
+            updatedRoom.kothState?.currentRound &&
+            prevRoom?.kothState?.currentRound &&
+            updatedRoom.kothState.currentRound > prevRoom.kothState.currentRound
+          ) {
+            this.emit('koth_round_elimination', {
+              nextRound: updatedRoom.kothState.currentRound,
+              contenders: updatedRoom.kothState.contenders,
+              positionIndex: updatedRoom.kothState.positionIndex ?? 0,
+            });
+          }
+        }
 
         // If match ended in Firestore
         if (updatedRoom.status === 'finished' && prevRoom?.status !== 'finished') {
@@ -414,10 +498,12 @@ class OnlineMatchManager {
             prevRoom &&
             prevRoom.status === 'playing' &&
             updatedRoom.status === 'playing' &&
+            updatedRoom.turn > this.lastProcessedTurnNumber &&
             (prevRoom.turn !== updatedRoom.turn ||
               prevRoom.currentKickerRole !== updatedRoom.currentKickerRole ||
               prevRoom.positionIndex !== updatedRoom.positionIndex)
           ) {
+            this.lastProcessedTurnNumber = updatedRoom.turn;
             this.emit('turn_advanced', {
               nextTurnRole: updatedRoom.currentKickerRole,
               nextPositionIndex: updatedRoom.positionIndex ?? 0,
@@ -437,9 +523,13 @@ class OnlineMatchManager {
           if (
             roomData.lastShot &&
             roomData.lastShot.timestamp &&
-            roomData.lastShot.timestamp > this.lastProcessedShotTimestamp
+            roomData.lastShot.timestamp > this.lastProcessedShotTimestamp &&
+            (!roomData.lastShot.shotId || roomData.lastShot.shotId !== this.lastProcessedShotId)
           ) {
             this.lastProcessedShotTimestamp = roomData.lastShot.timestamp;
+            if (roomData.lastShot.shotId) {
+              this.lastProcessedShotId = roomData.lastShot.shotId;
+            }
             if (roomData.lastShot.kickerId !== this.localPlayerId) {
               this.emit('shot_executed', roomData.lastShot);
             }
@@ -650,6 +740,9 @@ class OnlineMatchManager {
         this.currentRoom.gkStartX = payload.gkStartX;
       }
     } else if (event === 'shot_executed') {
+      if (payload.shotId) {
+        this.lastProcessedShotId = payload.shotId;
+      }
       if (payload.timestamp) {
         this.lastProcessedShotTimestamp = Math.max(this.lastProcessedShotTimestamp, payload.timestamp);
       }
@@ -665,6 +758,9 @@ class OnlineMatchManager {
         }
       }
     } else if (event === 'turn_advanced') {
+      if (payload.turnNumber) {
+        this.lastProcessedTurnNumber = Math.max(this.lastProcessedTurnNumber, payload.turnNumber);
+      }
       if (this.currentRoom) {
         this.currentRoom.currentKickerRole = payload.nextTurnRole;
         this.currentRoom.positionIndex = payload.nextPositionIndex;
@@ -740,10 +836,71 @@ class OnlineMatchManager {
       }
     } else if (event === 'opponent_left' || event === 'leave_room') {
       if (this.currentRoom) {
-        this.currentRoom.status = 'opponent_left';
-        this.currentRoom.isOpponentDisconnected = true;
+        if (this.currentRoom.gameMode === 'king_of_the_hill') {
+          // If King of the Hill, one player leaving should not end the room for others
+          if (payload?.playerId) {
+            const remaining = (this.currentRoom.players || []).filter((p) => p.id !== payload.playerId);
+            this.currentRoom.players = remaining;
+            this.emit('koth_lobby_updated', { players: remaining, room: this.currentRoom });
+          }
+          this.emit('player_left', payload);
+        } else {
+          this.currentRoom.status = 'opponent_left';
+          this.currentRoom.isOpponentDisconnected = true;
+          this.emit('opponent_disconnected', { message: 'Opponent has left the room' });
+        }
       }
-      this.emit('opponent_disconnected', { message: 'Opponent has left the room' });
+    } else if (event === 'koth_host_transferred') {
+      if (this.currentRoom) {
+        if (payload.newHost) {
+          this.currentRoom.host = {
+            ...payload.newHost,
+            isLocal: payload.newHost.id === this.localPlayerId,
+          };
+        }
+        if (payload.players) {
+          this.currentRoom.players = payload.players;
+        }
+      }
+      this.emit('host_transferred', payload);
+      this.emit('koth_lobby_updated', { players: payload.players, room: this.currentRoom });
+    } else if (event === 'koth_lobby_updated') {
+      if (this.currentRoom) {
+        this.currentRoom.players = payload.players;
+      }
+      this.emit('koth_lobby_updated', payload);
+    } else if (event === 'koth_match_started') {
+      if (this.currentRoom) {
+        this.currentRoom.status = 'playing';
+        this.currentRoom.kothState = payload.kothState;
+      }
+      this.emit('koth_match_started', payload);
+    } else if (event === 'koth_shot') {
+      this.emit('koth_shot', payload);
+      if (payload.shot) {
+        this.emit('shot_executed', payload.shot);
+      }
+    } else if (event === 'koth_shot_outcome') {
+      this.emit('koth_shot_outcome', payload);
+    } else if (event === 'koth_turn_advance') {
+      if (this.currentRoom && this.currentRoom.kothState) {
+        this.currentRoom.kothState.activeContenderId = payload.nextContenderId;
+        this.currentRoom.kothState.activeShotIndex = payload.ballIndex;
+        this.currentRoom.kothState.positionIndex = payload.positionIndex;
+        if (payload.contenders) {
+          this.currentRoom.kothState.contenders = payload.contenders;
+        }
+      }
+      this.emit('koth_turn_advance', payload);
+    } else if (event === 'koth_round_elimination') {
+      if (this.currentRoom && this.currentRoom.kothState) {
+        this.currentRoom.kothState.currentRound = payload.nextRound;
+        if (payload.contenders) {
+          this.currentRoom.kothState.contenders = payload.contenders;
+        }
+        this.currentRoom.kothState.positionIndex = payload.positionIndex;
+      }
+      this.emit('koth_round_elimination', payload);
     }
 
     this.emit(event, payload);
@@ -769,7 +926,7 @@ class OnlineMatchManager {
    * 4. Periodically re-evaluates pool to guarantee fast pairing if players search simultaneously
    */
   public async findMatch(
-    gameMode: 'match' | 'penalty_training' | 'survival' = 'match',
+    gameMode: 'match' | 'penalty_training' | 'survival' | 'king_of_the_hill' = 'match',
     wagerTier?: 'rookie' | 'pro' | 'champion' | 'legend',
     entryFee?: number,
     prizePot?: number
@@ -1365,8 +1522,167 @@ class OnlineMatchManager {
     this.emit('matchmaking_cancelled', {});
   }
 
+  /**
+   * Fetch open public rooms with active players
+   */
+  public async getPublicRooms(gameModeFilter?: string): Promise<OnlineMatchRoom[]> {
+    try {
+      const roomsCol = collection(db, 'rooms');
+      const q = query(roomsCol, limit(30));
+      const snap = await getDocs(q);
+      const rooms: OnlineMatchRoom[] = [];
+      const now = Date.now();
+
+      snap.forEach((docSnap) => {
+        const d = docSnap.data();
+        if (!d) return;
+        const roomId = d.roomId || docSnap.id;
+        const age = now - (d.updatedAt || d.createdAt || 0);
+
+        // Discard stale rooms older than 45 seconds without heartbeat
+        if (age > 45000) {
+          if (age > 90000) {
+            deleteDoc(doc(db, 'rooms', roomId)).catch(() => {});
+          }
+          return;
+        }
+
+        // Room must be in waiting or selecting_country state
+        if (d.status !== 'waiting' && d.status !== 'selecting_country' && d.status !== 'ready') return;
+        if (d.isOpponentDisconnected) return;
+
+        // Filter by gameMode if requested
+        if (gameModeFilter && d.gameMode !== gameModeFilter) return;
+
+        // In 1v1, if guest already exists, room is occupied
+        if (d.gameMode !== 'king_of_the_hill' && d.guest) return;
+
+        // In KOTH, max 4 players
+        const currentCount = Array.isArray(d.players) ? d.players.length : (d.guest ? 2 : 1);
+        if (d.gameMode === 'king_of_the_hill' && currentCount >= 4) return;
+
+        rooms.push({
+          roomId,
+          host: {
+            id: d.host?.id || 'host',
+            name: d.host?.name || 'Host',
+            countryCode: d.host?.countryCode || null,
+            role: 'host',
+            isReady: Boolean(d.host?.isReady),
+            isLocal: d.host?.id === this.localPlayerId,
+            profilePictureUrl: d.host?.profilePictureUrl || null,
+          },
+          guest: d.guest ? {
+            id: d.guest.id,
+            name: d.guest.name,
+            countryCode: d.guest.countryCode || null,
+            role: 'guest',
+            isReady: Boolean(d.guest.isReady),
+            isLocal: d.guest.id === this.localPlayerId,
+            profilePictureUrl: d.guest.profilePictureUrl || null,
+          } : null,
+          gameMode: d.gameMode || 'match',
+          status: d.status,
+          currentKickerRole: d.currentKickerRole || 'host',
+          score: d.score || { host: 0, guest: 0 },
+          turn: d.turn || 1,
+          isPublic: d.isPublic ?? true,
+          maxPlayers: d.maxPlayers || (d.gameMode === 'king_of_the_hill' ? 4 : 2),
+          players: Array.isArray(d.players) ? d.players : (d.guest ? [d.host, d.guest] : [d.host]),
+          wagerTier: d.wagerTier,
+          entryFee: d.entryFee,
+          prizePot: d.prizePot,
+          division: d.division,
+          kothState: d.kothState,
+        });
+      });
+
+      // Sort newest first
+      rooms.sort((a, b) => ((b as any).createdAt || 0) - ((a as any).createdAt || 0));
+      return rooms;
+    } catch (err) {
+      console.warn('Failed to fetch public rooms:', err);
+      return [];
+    }
+  }
+
+  /**
+   * Realtime subscription to open public rooms
+   */
+  public subscribePublicRooms(callback: (rooms: OnlineMatchRoom[]) => void, gameModeFilter?: string): () => void {
+    try {
+      const roomsCol = collection(db, 'rooms');
+      const q = query(roomsCol, limit(30));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const rooms: OnlineMatchRoom[] = [];
+        const now = Date.now();
+
+        snapshot.forEach((docSnap) => {
+          const d = docSnap.data();
+          if (!d) return;
+          const roomId = d.roomId || docSnap.id;
+          const age = now - (d.updatedAt || d.createdAt || 0);
+
+          if (age > 45000) return;
+          if (d.status !== 'waiting' && d.status !== 'selecting_country' && d.status !== 'ready') return;
+          if (d.isOpponentDisconnected) return;
+          if (gameModeFilter && d.gameMode !== gameModeFilter) return;
+          if (d.gameMode !== 'king_of_the_hill' && d.guest) return;
+
+          const currentCount = Array.isArray(d.players) ? d.players.length : (d.guest ? 2 : 1);
+          if (d.gameMode === 'king_of_the_hill' && currentCount >= 4) return;
+
+          rooms.push({
+            roomId,
+            host: {
+              id: d.host?.id || 'host',
+              name: d.host?.name || 'Host',
+              countryCode: d.host?.countryCode || null,
+              role: 'host',
+              isReady: Boolean(d.host?.isReady),
+              isLocal: d.host?.id === this.localPlayerId,
+              profilePictureUrl: d.host?.profilePictureUrl || null,
+            },
+            guest: d.guest ? {
+              id: d.guest.id,
+              name: d.guest.name,
+              countryCode: d.guest.countryCode || null,
+              role: 'guest',
+              isReady: Boolean(d.guest.isReady),
+              isLocal: d.guest.id === this.localPlayerId,
+              profilePictureUrl: d.guest.profilePictureUrl || null,
+            } : null,
+            gameMode: d.gameMode || 'match',
+            status: d.status,
+            currentKickerRole: d.currentKickerRole || 'host',
+            score: d.score || { host: 0, guest: 0 },
+            turn: d.turn || 1,
+            isPublic: d.isPublic ?? true,
+            maxPlayers: d.maxPlayers || (d.gameMode === 'king_of_the_hill' ? 4 : 2),
+            players: Array.isArray(d.players) ? d.players : (d.guest ? [d.host, d.guest] : [d.host]),
+            wagerTier: d.wagerTier,
+            entryFee: d.entryFee,
+            prizePot: d.prizePot,
+            division: d.division,
+            kothState: d.kothState,
+          });
+        });
+
+        rooms.sort((a, b) => ((b as any).createdAt || 0) - ((a as any).createdAt || 0));
+        callback(rooms);
+      }, (err) => {
+        console.warn('Public rooms subscription warning:', err);
+      });
+
+      return unsubscribe;
+    } catch (e) {
+      console.warn('Error subscribing to public rooms:', e);
+      return () => {};
+    }
+  }
+
   public async createRoom(
-    gameMode: 'match' | 'penalty_training' | 'survival' = 'match',
+    gameMode: 'match' | 'penalty_training' | 'survival' | 'king_of_the_hill' = 'match',
     customCode?: string,
     isMatchmaking: boolean = false,
     division?: number,
@@ -1378,6 +1694,7 @@ class OnlineMatchManager {
     const roomId = (customCode || this.generateRoomCode()).toUpperCase();
     const initialPosIndex = Math.floor(Math.random() * 30);
     const createdAt = Date.now();
+    const maxPlayers = gameMode === 'king_of_the_hill' ? 4 : 2;
 
     const hostPlayer: OnlinePlayer = {
       id: this.localPlayerId,
@@ -1388,6 +1705,8 @@ class OnlineMatchManager {
       isLocal: true,
       profilePictureUrl: this.localPlayerProfilePictureUrl,
     };
+
+    const initialPlayers: OnlinePlayer[] = [hostPlayer];
 
     this.currentRoom = {
       roomId,
@@ -1407,6 +1726,9 @@ class OnlineMatchManager {
       countdown: null,
       countdownStartTime: null,
       isMatchmaking,
+      isPublic: true,
+      maxPlayers,
+      players: initialPlayers,
     };
     (this.currentRoom as any).createdAt = createdAt;
 
@@ -1424,6 +1746,9 @@ class OnlineMatchManager {
         entryFee: entryFee ?? null,
         prizePot: prizePot ?? null,
         isMatchmaking,
+        isPublic: true,
+        maxPlayers,
+        players: initialPlayers,
         currentKickerRole: 'host',
         score: { host: 0, guest: 0 },
         survivalLives: gameMode === 'survival' ? { host: 3, guest: 3 } : null,
@@ -1484,9 +1809,26 @@ class OnlineMatchManager {
         return false;
       }
 
-      if (data.status !== 'waiting' && data.guest && data.guest.id !== this.localPlayerId) {
-        this.emit('error', { message: `Room #${code} is full or a match is already in progress.` });
-        return false;
+      const isKoth = data.gameMode === 'king_of_the_hill';
+      const existingPlayers: any[] = Array.isArray(data.players)
+        ? data.players
+        : (data.guest ? [data.host, data.guest] : [data.host]);
+      const isAlreadyInRoom = existingPlayers.some((p: any) => p.id === this.localPlayerId);
+
+      if (isKoth) {
+        if (!isAlreadyInRoom && existingPlayers.length >= 4) {
+          const fullMsg = `King of the Hill Room #${code} is full (4/4 players max). Maximum 4 players allowed.`;
+          this.emit('error', { message: fullMsg });
+          this.emit('room_full', { roomId: code, message: fullMsg });
+          return false;
+        }
+      } else {
+        if (data.status !== 'waiting' && data.guest && data.guest.id !== this.localPlayerId) {
+          const fullMsg = `Room #${code} is full or a match is already in progress.`;
+          this.emit('error', { message: fullMsg });
+          this.emit('room_full', { roomId: code, message: fullMsg });
+          return false;
+        }
       }
 
       const guestPlayer: OnlinePlayer = {
@@ -1499,6 +1841,22 @@ class OnlineMatchManager {
         profilePictureUrl: this.localPlayerProfilePictureUrl,
       };
 
+      const updatedPlayers = isAlreadyInRoom
+        ? existingPlayers
+        : [
+            ...existingPlayers,
+            {
+              id: guestPlayer.id,
+              name: guestPlayer.name,
+              countryCode: null,
+              role: 'guest',
+              isReady: false,
+              profilePictureUrl: guestPlayer.profilePictureUrl,
+            },
+          ];
+
+      const nextStatus = isKoth ? 'waiting' : 'selecting_country';
+
       await updateDoc(roomRef, {
         guest: {
           id: guestPlayer.id,
@@ -1507,7 +1865,9 @@ class OnlineMatchManager {
           isReady: false,
           profilePictureUrl: this.localPlayerProfilePictureUrl,
         },
-        status: 'selecting_country',
+        players: updatedPlayers,
+        status: nextStatus,
+        updatedAt: Date.now(),
       });
 
       this.currentRoom = {
@@ -1523,7 +1883,7 @@ class OnlineMatchManager {
         },
         guest: guestPlayer,
         gameMode: data.gameMode || 'match',
-        status: 'selecting_country',
+        status: nextStatus,
         currentKickerRole: 'host',
         score: { host: 0, guest: 0 },
         turn: 1,
@@ -1531,6 +1891,10 @@ class OnlineMatchManager {
         countdown: null,
         countdownStartTime: null,
         isMatchmaking: data.isMatchmaking || false,
+        isPublic: data.isPublic ?? true,
+        maxPlayers: data.maxPlayers || (isKoth ? 4 : 2),
+        players: updatedPlayers,
+        kothState: data.kothState,
       };
 
       this.listenToFirestoreRoom(code);
@@ -1549,10 +1913,139 @@ class OnlineMatchManager {
       roomId: code,
       playerName: this.localPlayerName,
       playerId: this.localPlayerId,
+      profilePictureUrl: this.localPlayerProfilePictureUrl,
     });
 
     this.emit('room_joined', { roomId: code, role: 'guest', room: this.currentRoom });
     return true;
+  }
+
+  /**
+   * King of the Hill: Update contenders / player list in the lobby
+   */
+  public async updateKothLobbyPlayers(players: OnlinePlayer[]) {
+    if (!this.currentRoom) return;
+    this.currentRoom.players = players;
+    const roomRef = doc(db, 'rooms', this.currentRoom.roomId);
+    await updateDoc(roomRef, {
+      players,
+      updatedAt: Date.now(),
+    }).catch(() => {});
+    this.send('koth_lobby_updated', { players });
+    this.emit('koth_lobby_updated', { players, room: this.currentRoom });
+  }
+
+  /**
+   * King of the Hill: Host starts match for all connected peers
+   */
+  public async startKothMatch(kothState: KingOfTheHillMatchState) {
+    if (!this.currentRoom) return;
+    this.currentRoom.status = 'playing';
+    this.currentRoom.kothState = kothState;
+    const roomRef = doc(db, 'rooms', this.currentRoom.roomId);
+    await updateDoc(roomRef, {
+      status: 'playing',
+      kothState,
+      updatedAt: Date.now(),
+    }).catch(() => {});
+    this.send('koth_match_started', { kothState });
+    this.emit('koth_match_started', { kothState, room: this.currentRoom });
+  }
+
+  /**
+   * King of the Hill: Broadcast a live shot executed by a player or host-controlled bot
+   */
+  public async sendKothShot(shotPayload: OnlineShotPayload, outcomePayload?: any) {
+    this.send('koth_shot', { shot: shotPayload, outcome: outcomePayload });
+    this.emit('koth_shot', { shot: shotPayload, outcome: outcomePayload });
+  }
+
+  /**
+   * King of the Hill: Advance to next turn (next contender, ball, and spot)
+   */
+  public async advanceKothTurn(
+    nextContenderId: string,
+    ballIndex: number,
+    positionIndex: number,
+    contenders: KingOfTheHillContender[]
+  ) {
+    if (!this.currentRoom) return;
+    if (this.currentRoom.kothState) {
+      this.currentRoom.kothState.activeContenderId = nextContenderId;
+      this.currentRoom.kothState.activeShotIndex = ballIndex;
+      this.currentRoom.kothState.positionIndex = positionIndex;
+      this.currentRoom.kothState.contenders = contenders;
+    }
+    const payload = { nextContenderId, ballIndex, positionIndex, contenders };
+    this.send('koth_turn_advance', payload);
+    this.emit('koth_turn_advance', payload);
+    const roomRef = doc(db, 'rooms', this.currentRoom.roomId);
+    updateDoc(roomRef, {
+      'kothState.activeContenderId': nextContenderId,
+      'kothState.activeShotIndex': ballIndex,
+      'kothState.positionIndex': positionIndex,
+      'kothState.contenders': contenders,
+      updatedAt: Date.now(),
+    }).catch(() => {});
+  }
+
+  /**
+   * King of the Hill: Advance to next knockout round with eliminated contender
+   */
+  public async advanceKothRound(
+    nextRound: number,
+    contenders: KingOfTheHillContender[],
+    positionIndex: number
+  ) {
+    if (!this.currentRoom) return;
+    if (this.currentRoom.kothState) {
+      this.currentRoom.kothState.currentRound = nextRound;
+      this.currentRoom.kothState.contenders = contenders;
+      this.currentRoom.kothState.positionIndex = positionIndex;
+      this.currentRoom.kothState.activeShotIndex = 0;
+    }
+    const payload = { nextRound, contenders, positionIndex };
+    this.send('koth_round_elimination', payload);
+    this.emit('koth_round_elimination', payload);
+    const roomRef = doc(db, 'rooms', this.currentRoom.roomId);
+    updateDoc(roomRef, {
+      'kothState.currentRound': nextRound,
+      'kothState.contenders': contenders,
+      'kothState.positionIndex': positionIndex,
+      'kothState.activeShotIndex': 0,
+      updatedAt: Date.now(),
+    }).catch(() => {});
+  }
+
+  /**
+   * King of the Hill: Synchronize individual shot outcome
+   */
+  public async syncKothShotOutcome(
+    contenderIdOrPayload:
+      | string
+      | {
+          contenderId: string;
+          currentRoundScore?: number;
+          currentRoundGoals?: number;
+          currentRoundShots?: KingShotOutcome[];
+          totalScore?: number;
+          totalGoals?: number;
+          outcome?: KingShotOutcome;
+          scoreAdded?: number;
+          isGoal?: boolean;
+          details?: string;
+        },
+    outcome?: KingShotOutcome,
+    scoreAdded?: number,
+    isGoal?: boolean,
+    details?: string
+  ) {
+    const payload =
+      typeof contenderIdOrPayload === 'object'
+        ? contenderIdOrPayload
+        : { contenderId: contenderIdOrPayload, outcome, scoreAdded, isGoal, details };
+    this.send('koth_shot_outcome', payload);
+    this.emit('koth_shot_outcome', payload);
   }
 
   /**
@@ -1717,18 +2210,42 @@ class OnlineMatchManager {
     });
   }
 
-  public syncAim(aimProgress: number, curveAmount: number) {
+  public syncAim(aimProgress: number, curveAmount: number, force: boolean = false) {
+    const now = performance.now();
+    const aimDiff = Math.abs(aimProgress - this.lastAimProgress);
+    const curveDiff = Math.abs(curveAmount - this.lastCurveAmount);
+
+    // Throttle to ~28Hz or significant change to prevent network packet floods on mobile networks
+    if (!force && now - this.lastAimSyncTime < 35 && aimDiff < 0.02 && curveDiff < 0.04) {
+      return;
+    }
+    this.lastAimSyncTime = now;
+    this.lastAimProgress = aimProgress;
+    this.lastCurveAmount = curveAmount;
+
     this.send('sync_aim_curve', {
       aimProgress,
       curveAmount,
     });
   }
 
-  public syncAimCurve(aimProgress: number, curveAmount: number) {
-    this.syncAim(aimProgress, curveAmount);
+  public syncAimCurve(aimProgress: number, curveAmount: number, force: boolean = false) {
+    this.syncAim(aimProgress, curveAmount, force);
   }
 
-  public syncAftertouch(swerve: number, dip: number) {
+  public syncAftertouch(swerve: number, dip: number, force: boolean = false) {
+    const now = performance.now();
+    const swerveDiff = Math.abs(swerve - this.lastSwerve);
+    const dipDiff = Math.abs(dip - this.lastDip);
+
+    // Throttle aftertouch streaming to ~28Hz to avoid choking P2P/WebSocket channels
+    if (!force && now - this.lastAftertouchSyncTime < 35 && swerveDiff < 0.03 && dipDiff < 0.03) {
+      return;
+    }
+    this.lastAftertouchSyncTime = now;
+    this.lastSwerve = swerve;
+    this.lastDip = dip;
+
     this.send('sync_aftertouch', {
       swerve,
       dip,
@@ -1764,6 +2281,8 @@ class OnlineMatchManager {
   public advanceOnlineTurn(turnData: OnlineTurnAdvancePayload) {
     const hostScore = turnData.hostScore !== undefined ? turnData.hostScore : turnData.homeScore;
     const guestScore = turnData.guestScore !== undefined ? turnData.guestScore : turnData.awayScore;
+
+    this.lastProcessedTurnNumber = Math.max(this.lastProcessedTurnNumber, turnData.turnNumber);
 
     if (this.currentRoom) {
       this.currentRoom.currentKickerRole = turnData.nextTurnRole;
@@ -1805,11 +2324,14 @@ class OnlineMatchManager {
   }
 
   public executeShot(shotData: OnlineShotPayload) {
-    const payloadWithTimestamp: OnlineShotPayload & { timestamp: number } = {
+    const shotId = shotData.shotId || `shot_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const payloadWithTimestamp: OnlineShotPayload & { timestamp: number; shotId: string } = {
       ...shotData,
+      shotId,
       timestamp: Date.now(),
     };
     this.lastProcessedShotTimestamp = payloadWithTimestamp.timestamp;
+    this.lastProcessedShotId = shotId;
 
     // Send over P2P/WebSocket/BroadcastChannel
     this.send('shot_executed', payloadWithTimestamp);
@@ -2065,11 +2587,55 @@ class OnlineMatchManager {
       const room = this.currentRoom;
       const roomId = room.roomId;
       const isWaiting = room.status === 'waiting' || room.isMatchmaking;
+      const isKoth = room.gameMode === 'king_of_the_hill';
 
       try {
         this.send('opponent_left', { roomId, playerId: this.localPlayerId });
         this.send('leave_room', { roomId, playerId: this.localPlayerId });
       } catch {}
+
+      if (isKoth && isWaiting) {
+        // King of the Hill lobby: do not destroy room if other players remain
+        const existingPlayers = Array.isArray(room.players) && room.players.length > 0
+          ? room.players
+          : (room.guest ? [room.host, room.guest] : [room.host]);
+        const remainingPlayers = existingPlayers.filter((p) => p.id !== this.localPlayerId);
+
+        if (remainingPlayers.length > 0) {
+          if (room.host?.id === this.localPlayerId) {
+            // Local player was host -> transfer host to the next remaining player!
+            this.transferHostAndLeave(remainingPlayers[0].id);
+            return;
+          } else {
+            // Guest leaving -> remove guest from players list in Firestore
+            try {
+              const roomRef = doc(db, 'rooms', roomId);
+              updateDoc(roomRef, {
+                players: remainingPlayers,
+                leftPlayerId: this.localPlayerId,
+                updatedAt: Date.now(),
+              }).catch(() => {});
+              this.send('koth_lobby_updated', { players: remainingPlayers });
+            } catch {}
+          }
+        } else {
+          // Last player in room left -> cancel and delete doc
+          try {
+            const roomRef = doc(db, 'rooms', roomId);
+            updateDoc(roomRef, {
+              status: 'cancelled',
+              isMatchmaking: false,
+              isOpponentDisconnected: true,
+              leftPlayerId: this.localPlayerId,
+              updatedAt: Date.now(),
+            }).then(() => {
+              deleteDoc(roomRef).catch(() => {});
+            }).catch(() => {});
+          } catch {}
+        }
+        this.cleanupLocalLeaving();
+        return;
+      }
 
       try {
         const roomRef = doc(db, 'rooms', roomId);
@@ -2094,6 +2660,246 @@ class OnlineMatchManager {
       } catch {}
     }
 
+    this.cleanupLocalLeaving();
+  }
+
+  /**
+   * King of the Hill: Transfers room leader to another player in the lobby and cleans up locally
+   */
+  public async transferHostAndLeave(targetNewHostId?: string) {
+    if (!this.currentRoom) {
+      this.leaveRoom();
+      return;
+    }
+
+    const room = this.currentRoom;
+    const roomId = room.roomId;
+    const existingPlayers = Array.isArray(room.players) && room.players.length > 0
+      ? room.players
+      : (room.guest ? [room.host, room.guest] : [room.host]);
+    const remainingPlayers = existingPlayers.filter((p) => p.id !== this.localPlayerId);
+
+    if (remainingPlayers.length === 0) {
+      this.leaveRoom();
+      return;
+    }
+
+    const targetNewHost = (targetNewHostId ? remainingPlayers.find((p) => p.id === targetNewHostId) : null) || remainingPlayers[0];
+    const updatedPlayers = remainingPlayers.map((p) => ({
+      ...p,
+      role: (p.id === targetNewHost.id ? 'host' : 'guest') as 'host' | 'guest',
+      isLocal: false,
+    }));
+
+    const newHostData: OnlinePlayer = {
+      id: targetNewHost.id,
+      name: targetNewHost.name,
+      countryCode: targetNewHost.countryCode || null,
+      role: 'host',
+      isReady: true,
+      isLocal: false,
+      profilePictureUrl: targetNewHost.profilePictureUrl || null,
+    };
+
+    try {
+      const roomRef = doc(db, 'rooms', roomId);
+      await updateDoc(roomRef, {
+        host: newHostData,
+        players: updatedPlayers,
+        leftPlayerId: this.localPlayerId,
+        updatedAt: Date.now(),
+      });
+
+      this.send('koth_host_transferred', {
+        newHostId: targetNewHost.id,
+        newHost: newHostData,
+        players: updatedPlayers,
+        previousHostId: this.localPlayerId,
+      });
+      this.send('koth_lobby_updated', {
+        players: updatedPlayers,
+      });
+    } catch (err) {
+      console.warn('Failed to transfer host in Firestore:', err);
+    }
+
+    this.cleanupLocalLeaving();
+  }
+
+  /**
+   * King of the Hill: Remaining player claims room leader if current host disconnected or left
+   */
+  public async claimHostLeadership() {
+    if (!this.currentRoom) return;
+    const room = this.currentRoom;
+    const roomId = room.roomId;
+    const existingPlayers = Array.isArray(room.players) && room.players.length > 0
+      ? room.players
+      : [room.host];
+    const myPlayer = existingPlayers.find((p) => p.id === this.localPlayerId);
+    if (!myPlayer) return;
+
+    const previousHostId = room.host?.id;
+    const updatedPlayers = existingPlayers.map((p) => ({
+      ...p,
+      role: (p.id === this.localPlayerId ? 'host' : 'guest') as 'host' | 'guest',
+    }));
+
+    const newHostData: OnlinePlayer = {
+      id: this.localPlayerId,
+      name: this.localPlayerName,
+      countryCode: myPlayer.countryCode || null,
+      role: 'host',
+      isReady: true,
+      isLocal: true,
+      profilePictureUrl: this.localPlayerProfilePictureUrl,
+    };
+
+    try {
+      const roomRef = doc(db, 'rooms', roomId);
+      await updateDoc(roomRef, {
+        host: newHostData,
+        players: updatedPlayers,
+        updatedAt: Date.now(),
+      });
+
+      this.currentRoom.host = newHostData;
+      this.currentRoom.players = updatedPlayers;
+      this.send('koth_host_transferred', {
+        newHostId: this.localPlayerId,
+        newHost: newHostData,
+        players: updatedPlayers,
+        previousHostId,
+      });
+      this.emit('host_transferred', {
+        newHost: newHostData,
+        previousHostId,
+        room: this.currentRoom,
+      });
+      this.emit('koth_lobby_updated', {
+        players: updatedPlayers,
+        room: this.currentRoom,
+      });
+    } catch (err) {
+      console.warn('Failed to claim host leadership:', err);
+    }
+  }
+
+  /**
+   * King of the Hill: Transfers room leader to a player who is still alive in the tournament
+   */
+  public async transferHostLeadershipToAlivePlayer(
+    newHostId: string,
+    newHostName?: string,
+    countryCode?: string | null,
+    avatarUrl?: string | null
+  ) {
+    if (!this.currentRoom) return;
+    const room = this.currentRoom;
+    const roomId = room.roomId;
+    const previousHostId = room.host?.id;
+
+    const newHostData: OnlinePlayer = {
+      id: newHostId,
+      name: newHostName || 'New Leader',
+      countryCode: countryCode || null,
+      role: 'host',
+      isReady: true,
+      isLocal: newHostId === this.localPlayerId,
+      profilePictureUrl: avatarUrl || null,
+    };
+
+    this.currentRoom.host = newHostData;
+    if (Array.isArray(this.currentRoom.players)) {
+      this.currentRoom.players = this.currentRoom.players.map((p) => ({
+        ...p,
+        role: p.id === newHostId ? ('host' as const) : ('guest' as const),
+      }));
+    }
+
+    try {
+      const roomRef = doc(db, 'rooms', roomId);
+      await updateDoc(roomRef, {
+        host: newHostData,
+        players: this.currentRoom.players || [newHostData],
+        updatedAt: Date.now(),
+      });
+    } catch (err) {
+      console.warn('Failed to update host leadership in Firestore:', err);
+    }
+
+    this.send('koth_host_transferred', {
+      newHostId,
+      newHost: newHostData,
+      previousHostId,
+      players: this.currentRoom.players,
+      room: this.currentRoom,
+    });
+    this.emit('host_transferred', {
+      newHostId,
+      newHost: newHostData,
+      previousHostId,
+      players: this.currentRoom.players,
+      room: this.currentRoom,
+    });
+  }
+
+  /**
+   * Verifies if a room document still exists in Firestore and is not cancelled/deleted,
+   * also reporting whether the room has reached maximum player capacity.
+   */
+  public async checkRoomExists(roomId: string): Promise<{
+    exists: boolean;
+    status?: string;
+    hostId?: string;
+    isFull?: boolean;
+    playerCount?: number;
+    maxPlayers?: number;
+  }> {
+    if (!roomId) return { exists: false };
+    try {
+      const cleanId = roomId.trim().toUpperCase();
+      const roomRef = doc(db, 'rooms', cleanId);
+      const snap = await getDoc(roomRef);
+      if (!snap.exists()) {
+        return { exists: false };
+      }
+      const data = snap.data() as any;
+      if (data.status === 'cancelled' || data.status === 'deleted') {
+        return { exists: false, status: data.status };
+      }
+      const isKoth = data.gameMode === 'king_of_the_hill';
+      const playersList = Array.isArray(data.players)
+        ? data.players
+        : (data.guest ? [data.host, data.guest] : [data.host]);
+      const maxCount = isKoth ? 4 : 2;
+      const isFull = playersList.length >= maxCount;
+
+      return {
+        exists: true,
+        status: data.status,
+        hostId: data.host?.id,
+        isFull,
+        playerCount: playersList.length,
+        maxPlayers: maxCount,
+      };
+    } catch {
+      return { exists: false };
+    }
+  }
+
+  private cleanupLocalLeaving() {
+    this.isSearchingMatchmaking = false;
+    if (this.botFallbackTimer) {
+      clearTimeout(this.botFallbackTimer);
+      this.botFallbackTimer = null;
+    }
+    if (this.matchmakingInterval) {
+      clearInterval(this.matchmakingInterval);
+      this.matchmakingInterval = null;
+    }
+    this.stopHeartbeat();
+
     if (this.firestoreUnsub) {
       try { this.firestoreUnsub(); } catch {}
       this.firestoreUnsub = null;
@@ -2110,6 +2916,15 @@ class OnlineMatchManager {
     }
 
     this.currentRoom = null;
+    this.lastProcessedShotTimestamp = 0;
+    this.lastProcessedShotId = '';
+    this.lastProcessedTurnNumber = 0;
+    this.lastAimSyncTime = 0;
+    this.lastAimProgress = -1;
+    this.lastCurveAmount = -999;
+    this.lastAftertouchSyncTime = 0;
+    this.lastSwerve = -999;
+    this.lastDip = -999;
     this.emit('room_left', {});
   }
 

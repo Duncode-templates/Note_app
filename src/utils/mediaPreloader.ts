@@ -23,7 +23,203 @@ const whistleAudioPool: HTMLAudioElement[] = [];
 const GOAL_CHEER_POOL_SIZE = 2;
 const goalCheerAudioPool: HTMLAudioElement[] = [];
 
-let isLongAudioMutedGlobally = false;
+// Mute states: CrazyGames SDK setting, SDK volume level, Ad playing, Tab visibility
+let isSdkMutedGlobally = false;
+let sdkVolumeLevel = 1.0;
+let isAdMutedGlobally = false;
+let isUserMutedGlobally = false;
+let isTabHiddenMutedGlobally = false;
+
+// Check initial CrazyGames URL mute/volume parameters (?muteAudio=true / ?volume=0 / ?muted=true)
+try {
+  if (typeof window !== 'undefined' && window.location) {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (
+      urlParams.get('muteAudio') === 'true' ||
+      urlParams.get('muteAudio') === '1' ||
+      urlParams.get('muted') === 'true'
+    ) {
+      isSdkMutedGlobally = true;
+    }
+    const volParam = urlParams.get('volume');
+    if (volParam !== null) {
+      const parsedVol = parseFloat(volParam);
+      if (!isNaN(parsedVol)) {
+        sdkVolumeLevel = Math.max(0, Math.min(1.0, parsedVol > 1 ? parsedVol / 100 : parsedVol));
+        if (sdkVolumeLevel === 0) isSdkMutedGlobally = true;
+      }
+    }
+  }
+} catch {}
+
+const audioMuteListeners = new Set<(isMuted: boolean) => void>();
+
+export function isEffectivelyMuted(): boolean {
+  return isSdkMutedGlobally || isAdMutedGlobally || isUserMutedGlobally || isTabHiddenMutedGlobally || sdkVolumeLevel <= 0.001;
+}
+
+export function isAudioMuted(): boolean {
+  return isEffectivelyMuted();
+}
+
+export function getCrazyGamesSdkVolume(): number {
+  return sdkVolumeLevel;
+}
+
+export function isUserMuted(): boolean {
+  return isUserMutedGlobally;
+}
+
+export function isSdkMuted(): boolean {
+  return isSdkMutedGlobally;
+}
+
+export function isAdMuted(): boolean {
+  return isAdMutedGlobally;
+}
+
+export function subscribeAudioMuteState(listener: (isMuted: boolean) => void): () => void {
+  audioMuteListeners.add(listener);
+  listener(isEffectivelyMuted());
+  return () => {
+    audioMuteListeners.delete(listener);
+  };
+}
+
+function notifyMuteListeners() {
+  const muted = isEffectivelyMuted();
+  audioMuteListeners.forEach((fn) => {
+    try {
+      fn(muted);
+    } catch {}
+  });
+}
+
+function applyGlobalMuteState() {
+  const muted = isEffectivelyMuted();
+  const currentVolume = muted ? 0.0 : sdkVolumeLevel;
+  updateCrowdMuteState(muted);
+
+  if (sharedAudioCtx) {
+    const now = sharedAudioCtx.currentTime;
+    try {
+      if (masterGainNode) {
+        masterGainNode.gain.setValueAtTime(currentVolume, now);
+      }
+      if (sfxBusNode) {
+        sfxBusNode.gain.setValueAtTime(currentVolume, now);
+      }
+      if (longSoundBusNode) {
+        longSoundBusNode.gain.setValueAtTime(currentVolume, now);
+      }
+    } catch {}
+  }
+
+  // HTML5 audio elements mute & pause when muted
+  for (const el of audioElementsPool) {
+    try {
+      el.muted = muted;
+      if (muted) el.pause();
+    } catch {}
+  }
+  for (const el of keeperHitAudioPool) {
+    try {
+      el.muted = muted;
+      if (muted) el.pause();
+    } catch {}
+  }
+  for (const el of whistleAudioPool) {
+    try {
+      el.muted = muted;
+      if (muted) el.pause();
+    } catch {}
+  }
+  for (const el of goalCheerAudioPool) {
+    try {
+      el.muted = muted;
+      if (muted) el.pause();
+    } catch {}
+  }
+
+  notifyMuteListeners();
+}
+
+/**
+ * CrazyGames SDK Mute Setting updater (called when SDK settings change, volume button is toggled, or ?muteAudio=true)
+ */
+export function setCrazyGamesSdkMuteState(muted: boolean) {
+  isSdkMutedGlobally = Boolean(muted);
+  applyGlobalMuteState();
+}
+
+/**
+ * CrazyGames SDK Volume updater (called when SDK volume setting changes)
+ */
+export function setCrazyGamesSdkVolume(volume: number) {
+  if (typeof volume === 'number' && !isNaN(volume)) {
+    const normalized = Math.max(0, Math.min(1.0, volume > 1 ? volume / 100 : volume));
+    sdkVolumeLevel = normalized;
+    if (normalized <= 0.001) {
+      isSdkMutedGlobally = true;
+    } else {
+      isSdkMutedGlobally = false;
+    }
+  }
+  applyGlobalMuteState();
+}
+
+/**
+ * User manual in-game mute toggle
+ */
+export function setUserMuteState(muted: boolean) {
+  isUserMutedGlobally = Boolean(muted);
+  applyGlobalMuteState();
+}
+
+export function toggleUserMuteState(): boolean {
+  setUserMuteState(!isUserMutedGlobally);
+  return isUserMutedGlobally;
+}
+
+/**
+ * CrazyGames SDK Ad Mute: Mutes all audio when video ads start
+ */
+export function muteCrazyGamesAudio() {
+  isAdMutedGlobally = true;
+  applyGlobalMuteState();
+}
+
+/**
+ * CrazyGames SDK Ad Unmute: Restores audio when video ads finish
+ */
+export function unmuteCrazyGamesAudio() {
+  isAdMutedGlobally = false;
+  applyGlobalMuteState();
+}
+
+// Aliases for compatibility
+export const muteAllAudio = muteCrazyGamesAudio;
+export const unmuteAllAudio = unmuteCrazyGamesAudio;
+export const muteLongSounds = muteCrazyGamesAudio;
+export const unmuteLongSounds = unmuteCrazyGamesAudio;
+
+export function isLongAudioMuted(): boolean {
+  return isEffectivelyMuted();
+}
+
+// Handle browser tab visibility changes
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    isTabHiddenMutedGlobally = document.hidden;
+    if (document.hidden && sharedAudioCtx && sharedAudioCtx.state === 'running') {
+      sharedAudioCtx.suspend().catch(() => {});
+    } else if (!document.hidden && sharedAudioCtx && sharedAudioCtx.state === 'suspended' && !isEffectivelyMuted()) {
+      sharedAudioCtx.resume().catch(() => {});
+    }
+    applyGlobalMuteState();
+  });
+}
+
 let kickAudioBuffer: AudioBuffer | null = null;
 let keeperHitAudioBuffer: AudioBuffer | null = null;
 let whistleAudioBuffer: AudioBuffer | null = null;
@@ -34,8 +230,6 @@ let isDecodingKeeperAudio = false;
 let isDecodingWhistleAudio = false;
 let isDecodingGoalCheerAudio = false;
 
-let activeGoalCheerWebAudio: { source: AudioBufferSourceNode; gain: GainNode }[] = [];
-
 let nextPoolIndex = 0;
 let nextKeeperPoolIndex = 0;
 let nextWhistlePoolIndex = 0;
@@ -43,11 +237,12 @@ let nextGoalCheerPoolIndex = 0;
 
 /**
  * Shared reusable AudioContext with high-performance studio mastering pipeline:
- * [SFX Sources]        -> [SFX Bus (1.0)]       -\
- *                                                 -> [Master LowShelf -> MidPeak -> HighShelf -> Compressor] -> [Destination]
+ * [SFX Sources]        -> [SFX Bus (0..1)]       -\
+ *                                                  -> [Master LowShelf -> MidPeak -> HighShelf -> Compressor] -> [Master Gain (0..1)] -> [Destination]
  * [Long Sound Sources] -> [Long Sound Bus (0..1)]-/
  */
 let sharedAudioCtx: AudioContext | null = null;
+let masterGainNode: GainNode | null = null;
 let sfxBusNode: GainNode | null = null;
 let longSoundBusNode: GainNode | null = null;
 let masterCompressorNode: DynamicsCompressorNode | null = null;
@@ -56,33 +251,34 @@ let eqMidPeakNode: BiquadFilterNode | null = null;
 let eqHighShelfNode: BiquadFilterNode | null = null;
 
 function setupMasterAudioPipeline(ctx: AudioContext) {
-  if (sfxBusNode && longSoundBusNode) return;
+  if (sfxBusNode && longSoundBusNode && masterGainNode) return;
 
   try {
-    // 1. Two Independent Sub-Buses:
-    // SFX Bus: Short transient sounds (Kick, UI clicks, Keeper hit) - NEVER muted by CrazyGames SDK
-    sfxBusNode = ctx.createGain();
-    sfxBusNode.gain.setValueAtTime(1.0, ctx.currentTime);
+    const initGain = isEffectivelyMuted() ? 0.0 : 1.0;
 
-    // Long Sound Bus: Continuous / ambient sounds (Crowd noise, Goal celebration, Whistle, Music) - Muted during CrazyGames Ads
+    // Master Output Gain
+    masterGainNode = ctx.createGain();
+    masterGainNode.gain.setValueAtTime(initGain, ctx.currentTime);
+
+    // 1. Two Independent Sub-Buses:
+    sfxBusNode = ctx.createGain();
+    sfxBusNode.gain.setValueAtTime(initGain, ctx.currentTime);
+
     longSoundBusNode = ctx.createGain();
-    longSoundBusNode.gain.setValueAtTime(isLongAudioMutedGlobally ? 0.0 : 1.0, ctx.currentTime);
+    longSoundBusNode.gain.setValueAtTime(initGain, ctx.currentTime);
 
     // 2. Three-Band Mastering Equalizer
-    // Low Shelf: Rich bottom end punch (120Hz, +1.5dB)
     eqLowShelfNode = ctx.createBiquadFilter();
     eqLowShelfNode.type = 'lowshelf';
     eqLowShelfNode.frequency.setValueAtTime(120, ctx.currentTime);
     eqLowShelfNode.gain.setValueAtTime(1.5, ctx.currentTime);
 
-    // Mid Peaking: De-harsh midrange frequencies (1600Hz, -2.0dB, Q=1.0)
     eqMidPeakNode = ctx.createBiquadFilter();
     eqMidPeakNode.type = 'peaking';
     eqMidPeakNode.frequency.setValueAtTime(1600, ctx.currentTime);
     eqMidPeakNode.Q.setValueAtTime(1.0, ctx.currentTime);
     eqMidPeakNode.gain.setValueAtTime(-2.0, ctx.currentTime);
 
-    // High Shelf: Tame piercing whistle and sharp clipping transients (7000Hz, -2.5dB)
     eqHighShelfNode = ctx.createBiquadFilter();
     eqHighShelfNode.type = 'highshelf';
     eqHighShelfNode.frequency.setValueAtTime(7000, ctx.currentTime);
@@ -97,15 +293,14 @@ function setupMasterAudioPipeline(ctx: AudioContext) {
     masterCompressorNode.release.setValueAtTime(0.18, ctx.currentTime);
 
     // Connect Pipeline:
-    // sfxBusNode        -> eqLowShelf -> eqMidPeak -> eqHighShelf -> masterCompressor -> destination
-    // longSoundBusNode  -> eqLowShelf -> eqMidPeak -> eqHighShelf -> masterCompressor -> destination
     sfxBusNode.connect(eqLowShelfNode);
     longSoundBusNode.connect(eqLowShelfNode);
 
     eqLowShelfNode.connect(eqMidPeakNode);
     eqMidPeakNode.connect(eqHighShelfNode);
     eqHighShelfNode.connect(masterCompressorNode);
-    masterCompressorNode.connect(ctx.destination);
+    masterCompressorNode.connect(masterGainNode);
+    masterGainNode.connect(ctx.destination);
   } catch {
     // Pipeline fallback
   }
@@ -123,10 +318,10 @@ function getSharedAudioContext(): AudioContext | null {
     }
   }
   if (sharedAudioCtx) {
-    if (!sfxBusNode || !longSoundBusNode) {
+    if (!sfxBusNode || !longSoundBusNode || !masterGainNode) {
       setupMasterAudioPipeline(sharedAudioCtx);
     }
-    if (sharedAudioCtx.state === 'suspended') {
+    if (sharedAudioCtx.state === 'suspended' && !isEffectivelyMuted()) {
       sharedAudioCtx.resume().catch(() => {});
     }
   }
@@ -135,9 +330,9 @@ function getSharedAudioContext(): AudioContext | null {
 
 /**
  * Returns audio input node for short SFX (kicks, UI clicks, keeper blocks).
- * Never muted by CrazyGames SDK.
  */
 export function getSfxAudioInput(): AudioNode | null {
+  if (isEffectivelyMuted()) return null;
   const ctx = getSharedAudioContext();
   if (!ctx) return null;
   if (!sfxBusNode) {
@@ -148,9 +343,9 @@ export function getSfxAudioInput(): AudioNode | null {
 
 /**
  * Returns audio input node for long sound effects, celebrations, and music.
- * Muted when CrazyGames SDK triggers ad or ambient mute.
  */
 export function getLongSoundAudioInput(): AudioNode | null {
+  if (isEffectivelyMuted()) return null;
   const ctx = getSharedAudioContext();
   if (!ctx) return null;
   if (!longSoundBusNode) {
@@ -161,76 +356,6 @@ export function getLongSoundAudioInput(): AudioNode | null {
 
 export function getMasterAudioInput(): AudioNode | null {
   return getSfxAudioInput();
-}
-
-/**
- * CrazyGames SDK Mute: Mutes ONLY background music and long sounds (crowd noise, goal cheers, whistle).
- * Short SFX like ball kicks and UI clicks are NOT muted.
- */
-export function muteCrazyGamesAudio() {
-  isLongAudioMutedGlobally = true;
-  updateCrowdMuteState(true);
-  stopGoalCheerSound();
-
-  if (sharedAudioCtx && longSoundBusNode) {
-    try {
-      longSoundBusNode.gain.setTargetAtTime(0.0, sharedAudioCtx.currentTime, 0.02);
-    } catch {}
-  }
-
-  for (const el of whistleAudioPool) {
-    try {
-      el.muted = true;
-      el.pause();
-    } catch {}
-  }
-
-  for (const el of goalCheerAudioPool) {
-    try {
-      el.muted = true;
-      el.pause();
-    } catch {}
-  }
-}
-
-/**
- * CrazyGames SDK Unmute: Restores background music and long sounds (crowd noise, goal cheers, whistle).
- */
-export function unmuteCrazyGamesAudio() {
-  isLongAudioMutedGlobally = false;
-  updateCrowdMuteState(false);
-
-  if (sharedAudioCtx && longSoundBusNode) {
-    try {
-      longSoundBusNode.gain.setTargetAtTime(1.0, sharedAudioCtx.currentTime, 0.03);
-    } catch {}
-  }
-
-  for (const el of whistleAudioPool) {
-    try {
-      el.muted = false;
-    } catch {}
-  }
-
-  for (const el of goalCheerAudioPool) {
-    try {
-      el.muted = false;
-    } catch {}
-  }
-}
-
-// Aliases for compatibility
-export const muteAllAudio = muteCrazyGamesAudio;
-export const unmuteAllAudio = unmuteCrazyGamesAudio;
-export const muteLongSounds = muteCrazyGamesAudio;
-export const unmuteLongSounds = unmuteCrazyGamesAudio;
-
-export function isAudioMuted(): boolean {
-  return isLongAudioMutedGlobally;
-}
-
-export function isLongAudioMuted(): boolean {
-  return isLongAudioMutedGlobally;
 }
 
 /**
@@ -522,9 +647,9 @@ function playSyntheticKickImpact(ctx: AudioContext, normPower: number) {
 
 /**
  * Plays the real Soccer-kick sound with Web Audio Buffer (0ms latency), HTML5 Audio pool, and punchy impact response.
- * Short SFX: Never muted by CrazyGames SDK.
  */
 export function playKickSound(powerRatio = 0.5) {
+  if (isEffectivelyMuted()) return;
   const normPower = Math.max(0.35, Math.min(1.0, powerRatio));
 
   try {
@@ -595,9 +720,9 @@ export function playKickSound(powerRatio = 0.5) {
 /**
  * Strictly plays the uploaded Ball-hit-player.wav audio file when the ball hits
  * the goalkeeper (saves, dives, parries, catches, fingertip tips) or player blocks.
- * Short SFX: Never muted by CrazyGames SDK.
  */
 export function playKeeperHitSound(volume = 0.9) {
+  if (isEffectivelyMuted()) return;
   const normVol = Math.max(0.2, Math.min(1.0, volume));
 
   try {
@@ -662,10 +787,9 @@ export const playBallHitPlayerSound = playKeeperHitSound;
 
 /**
  * Plays the uploaded Whistle.mp3 audio file when the kicker is about to play the ball.
- * Long sound: Muted when CrazyGames SDK ad/ambient mute is active.
  */
 export function playWhistleSound(volume = 0.75) {
-  if (isLongAudioMutedGlobally) return;
+  if (isEffectivelyMuted()) return;
   const normVol = Math.max(0.1, Math.min(1.0, volume));
 
   try {
@@ -726,104 +850,16 @@ export function playWhistleSound(volume = 0.75) {
 export const playRefereeWhistle = playWhistleSound;
 
 /**
- * Plays the uploaded Goalcheer.mp3 audio file when a goal is scored.
- * Long sound / Celebration: Muted when CrazyGames SDK ad/ambient mute is active.
+ * Goal sound & crowd cheer removed as requested
  */
-export function playGoalCheerSound(volume = 0.85) {
-  if (isLongAudioMutedGlobally) return;
-  const normVol = Math.max(0.1, Math.min(1.0, volume));
-
-  try {
-    const ctx = getSharedAudioContext();
-    let playedWithWebAudio = false;
-
-    if (ctx) {
-      if (ctx.state === 'suspended') {
-        ctx.resume().catch(() => {});
-      }
-
-      const longSoundInput = getLongSoundAudioInput();
-
-      if (goalCheerAudioBuffer && longSoundInput) {
-        const source = ctx.createBufferSource();
-        source.buffer = goalCheerAudioBuffer;
-
-        const gainNode = ctx.createGain();
-        gainNode.gain.setValueAtTime(normVol, ctx.currentTime);
-
-        source.connect(gainNode);
-        gainNode.connect(longSoundInput);
-        source.start(ctx.currentTime);
-
-        const entry = { source, gain: gainNode };
-        activeGoalCheerWebAudio.push(entry);
-
-        source.onended = () => {
-          activeGoalCheerWebAudio = activeGoalCheerWebAudio.filter((e) => e !== entry);
-        };
-
-        playedWithWebAudio = true;
-      }
-    }
-
-    if (!playedWithWebAudio) {
-      if (goalCheerAudioPool.length === 0) {
-        initAudioUnlockListener();
-      }
-      if (goalCheerAudioPool.length > 0) {
-        let audioToPlay: HTMLAudioElement | null = null;
-        for (let i = 0; i < goalCheerAudioPool.length; i++) {
-          const audio = goalCheerAudioPool[i];
-          if (audio.paused || audio.ended) {
-            audioToPlay = audio;
-            break;
-          }
-        }
-        if (!audioToPlay) {
-          audioToPlay = goalCheerAudioPool[nextGoalCheerPoolIndex];
-          nextGoalCheerPoolIndex = (nextGoalCheerPoolIndex + 1) % goalCheerAudioPool.length;
-        }
-        if (audioToPlay) {
-          audioToPlay.currentTime = 0;
-          audioToPlay.volume = normVol;
-          const p = audioToPlay.play();
-          if (p !== undefined) {
-            p.catch(() => {});
-          }
-        }
-      }
-    }
-  } catch {}
+export function playGoalCheerSound(_volume = 0.85) {
+  // Goal sound removed as requested
 }
 
 export const playGoalSound = playGoalCheerSound;
 
-/**
- * Stops any playing goal cheer sound immediately (e.g., when positions reset or replay ends).
- */
 export function stopGoalCheerSound() {
-  try {
-    const ctx = getSharedAudioContext();
-    if (ctx && activeGoalCheerWebAudio.length > 0) {
-      const now = ctx.currentTime;
-      for (const item of activeGoalCheerWebAudio) {
-        try {
-          item.gain.gain.setTargetAtTime(0.0001, now, 0.04);
-          item.source.stop(now + 0.08);
-        } catch {}
-      }
-      activeGoalCheerWebAudio = [];
-    }
-
-    for (const audio of goalCheerAudioPool) {
-      try {
-        if (!audio.paused) {
-          audio.pause();
-          audio.currentTime = 0;
-        }
-      } catch {}
-    }
-  } catch {}
+  // Goal sound removed as requested
 }
 
 export const stopGoalSound = stopGoalCheerSound;
@@ -849,9 +885,9 @@ if (typeof window !== 'undefined') {
 
 /**
  * Button click sound.
- * Short SFX: Never muted by CrazyGames SDK.
  */
 export function playButtonClickSound(volume = 0.12) {
+  if (isEffectivelyMuted()) return;
   try {
     const ctx = getSharedAudioContext();
     if (!ctx) return;

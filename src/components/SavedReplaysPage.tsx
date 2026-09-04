@@ -10,7 +10,11 @@ import {
   AlertTriangle,
   Trophy,
   Zap,
+  Target,
+  X,
 } from 'lucide-react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faFutbol } from '@fortawesome/free-solid-svg-icons';
 import { SavedReplay } from '../types';
 import { savedReplayManager } from '../utils/savedReplayManager';
 import { getFlagUrl } from '../data/countries';
@@ -25,6 +29,8 @@ interface SavedReplaysPageProps {
   onBack: () => void;
   onPlayReplay: (replay: SavedReplay) => void;
   onQuickPlay: () => void;
+  onPracticeFreeKick?: () => void;
+  onPracticePenalty?: () => void;
 }
 
 export default function SavedReplaysPage({
@@ -35,11 +41,14 @@ export default function SavedReplaysPage({
   onBack,
   onPlayReplay,
   onQuickPlay,
+  onPracticeFreeKick,
+  onPracticePenalty,
 }: SavedReplaysPageProps) {
   const { t } = useTranslation();
   const [replays, setReplays] = useState<SavedReplay[]>(() => savedReplayManager.getReplays());
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState<boolean>(false);
+  const [isPracticeModalOpen, setIsPracticeModalOpen] = useState<boolean>(false);
 
   useEffect(() => {
     const unsubscribe = savedReplayManager.subscribe((updated) => {
@@ -116,17 +125,32 @@ export default function SavedReplaysPage({
           transition={{ duration: 0.4 }}
           className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 mb-5 pb-4 border-b-[2.5px] border-black/20"
         >
-          {/* Back Button */}
-          <motion.button
-            whileHover={{ y: -2, scale: 1.02 }}
-            whileTap={{ y: 4, scale: 0.97, boxShadow: '0px 1px 0px 0px #000' }}
-            transition={{ type: 'spring', stiffness: 500, damping: 22 }}
-            onClick={onBack}
-            className="px-4 py-2.5 rounded-[18px] font-black uppercase tracking-wider bg-white text-black border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer flex items-center gap-2 text-xs sm:text-sm outline-none focus:outline-none"
-          >
-            <ArrowLeft className="w-5 h-5 text-black stroke-[2.5]" />
-            <span>{t('common.backToMenu', 'BACK TO MENU')}</span>
-          </motion.button>
+          {/* Top Left Navigation Buttons */}
+          <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap">
+            <motion.button
+              whileHover={{ y: -2, scale: 1.02 }}
+              whileTap={{ y: 4, scale: 0.97, boxShadow: '0px 1px 0px 0px #000' }}
+              transition={{ type: 'spring', stiffness: 500, damping: 22 }}
+              onClick={onBack}
+              className="px-4 py-2.5 rounded-[18px] font-black uppercase tracking-wider bg-white text-black border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer flex items-center gap-2 text-xs sm:text-sm outline-none focus:outline-none"
+            >
+              <ArrowLeft className="w-5 h-5 text-black stroke-[2.5]" />
+              <span>{t('common.backToMenu', 'BACK TO MENU')}</span>
+            </motion.button>
+
+            {/* Play Practice Match Header Button */}
+            <motion.button
+              whileHover={{ y: -2, scale: 1.02 }}
+              whileTap={{ y: 4, scale: 0.97, boxShadow: '0px 1px 0px 0px #000' }}
+              transition={{ type: 'spring', stiffness: 500, damping: 22 }}
+              onClick={() => setIsPracticeModalOpen(true)}
+              className="px-4 py-2.5 rounded-[18px] font-black uppercase tracking-wider bg-amber-400 hover:bg-amber-300 text-black border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer flex items-center gap-2 text-xs sm:text-sm outline-none focus:outline-none shrink-0"
+              title={t('menu.practice', 'Practice Free Kicks & Penalties')}
+            >
+              <FontAwesomeIcon icon={faFutbol} className="text-base text-black" />
+              <span>{t('menu.practice', 'PRACTICE MATCH')}</span>
+            </motion.button>
+          </div>
 
           {/* Page Title Card */}
           <div className="bg-white border-[3.5px] border-black shadow-[0_6px_0_0_#000] rounded-[22px] px-5 py-3 text-left sm:text-right flex items-center gap-3">
@@ -224,6 +248,43 @@ export default function SavedReplaysPage({
           </div>
         </motion.div>
 
+        {/* Practice Match Training Card */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, delay: 0.12 }}
+          className="bg-white/95 backdrop-blur-md border-[3.5px] border-black rounded-[22px] p-3.5 sm:p-4 shadow-[0_6px_0_0_#000] mb-5 flex flex-col sm:flex-row items-center justify-between gap-3 text-black"
+        >
+          <div className="flex items-center gap-3 sm:gap-3.5 w-full sm:w-auto">
+            <div className="w-12 h-12 rounded-[16px] bg-amber-400 border-[2.5px] border-black flex items-center justify-center text-black shadow-xs shrink-0">
+              <FontAwesomeIcon icon={faFutbol} className="text-2xl text-black" />
+            </div>
+            <div className="flex flex-col">
+              <div className="flex items-center gap-2">
+                <span className="font-black text-sm sm:text-base md:text-lg uppercase tracking-wider text-black">
+                  {t('menu.practice', 'PRACTICE MATCH')}
+                </span>
+                <span className="bg-black text-amber-300 font-black text-[9px] sm:text-[10px] px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                  TRAINING DRILLS
+                </span>
+              </div>
+              <span className="text-[11px] sm:text-xs font-bold text-slate-700">
+                {t('practice.bannerDesc', 'Hone your curling free kicks, wall defense bypasses & penalty shootout strikes')}
+              </span>
+            </div>
+          </div>
+
+          <motion.button
+            whileHover={{ y: -2, scale: 1.02 }}
+            whileTap={{ y: 2, scale: 0.97 }}
+            onClick={() => setIsPracticeModalOpen(true)}
+            className="w-full sm:w-auto px-5 py-2.5 rounded-[16px] bg-amber-400 hover:bg-amber-300 active:scale-95 text-black font-black text-xs sm:text-sm uppercase tracking-wider border-[2.5px] border-black shadow-[0_3px_0_0_#000] cursor-pointer flex items-center justify-center gap-2 shrink-0 transition-all"
+          >
+            <Play className="w-4 h-4 fill-black text-black" />
+            <span>{t('practice.playPractice', 'PLAY PRACTICE MATCH')}</span>
+          </motion.button>
+        </motion.div>
+
         {/* Clear Confirmation Modal */}
         <AnimatePresence>
           {showClearConfirm && (
@@ -282,15 +343,27 @@ export default function SavedReplaysPage({
               {t('replays.noHighlightsDesc', 'Score a wonder goal in Free Kick Match, World Cup, Survival, or Wager Arena, and tap SAVE in the top right during replay mode to build your highlight reel!')}
             </p>
 
-            <motion.button
-              whileHover={{ y: -2, scale: 1.03 }}
-              whileTap={{ y: 4, scale: 0.97, boxShadow: '0px 1px 0px 0px #000' }}
-              onClick={onQuickPlay}
-              className="flex items-center gap-2 bg-emerald-400 hover:bg-emerald-300 text-black font-black text-sm uppercase tracking-wider px-6 py-3 rounded-[18px] border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer"
-            >
-              <Play className="w-4 h-4 fill-black" />
-              <span>{t('replays.playMatchNow', 'PLAY A MATCH NOW')}</span>
-            </motion.button>
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <motion.button
+                whileHover={{ y: -2, scale: 1.03 }}
+                whileTap={{ y: 4, scale: 0.97, boxShadow: '0px 1px 0px 0px #000' }}
+                onClick={() => setIsPracticeModalOpen(true)}
+                className="flex items-center gap-2 bg-amber-400 hover:bg-amber-300 text-black font-black text-sm uppercase tracking-wider px-6 py-3 rounded-[18px] border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer"
+              >
+                <FontAwesomeIcon icon={faFutbol} className="text-base text-black" />
+                <span>{t('menu.practice', 'PLAY PRACTICE MATCH')}</span>
+              </motion.button>
+
+              <motion.button
+                whileHover={{ y: -2, scale: 1.03 }}
+                whileTap={{ y: 4, scale: 0.97, boxShadow: '0px 1px 0px 0px #000' }}
+                onClick={onQuickPlay}
+                className="flex items-center gap-2 bg-emerald-400 hover:bg-emerald-300 text-black font-black text-sm uppercase tracking-wider px-6 py-3 rounded-[18px] border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer"
+              >
+                <Play className="w-4 h-4 fill-black" />
+                <span>{t('replays.playMatchNow', 'PLAY A MATCH NOW')}</span>
+              </motion.button>
+            </div>
           </motion.div>
         ) : (
           /* Replays 3D Grid */
@@ -393,6 +466,84 @@ export default function SavedReplaysPage({
             ))}
           </motion.div>
         )}
+
+        {/* Practice Drill Selection Modal */}
+        <AnimatePresence>
+          {isPracticeModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.85, y: 25 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.85, y: 25 }}
+                transition={{ type: 'spring', stiffness: 450, damping: 25 }}
+                className="w-full max-w-md bg-white border-[4px] border-black rounded-[28px] p-6 sm:p-8 shadow-[0_12px_0_0_#000] relative text-black"
+              >
+                <button
+                  onClick={() => setIsPracticeModalOpen(false)}
+                  className="absolute top-4 right-4 text-black hover:bg-rose-500 hover:text-white font-black text-xl w-9 h-9 flex items-center justify-center rounded-full border-2 border-black transition-all cursor-pointer bg-slate-100"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+                <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-wider text-black mb-1">
+                  {t('menu.practice', 'PRACTICE MATCH')}
+                </h2>
+                <p className="text-slate-600 text-xs sm:text-sm mb-6 font-bold uppercase tracking-wider">
+                  {t('practice.selectDrill', 'Select practice training drill:')}
+                </p>
+
+                <div className="flex flex-col gap-3.5">
+                  <motion.button
+                    whileHover={{ y: -2, scale: 1.015 }}
+                    whileTap={{ y: 4, scale: 0.98, boxShadow: '0px 1px 0px 0px #000' }}
+                    transition={{ type: 'spring', stiffness: 500, damping: 22 }}
+                    onClick={() => {
+                      setIsPracticeModalOpen(false);
+                      onPracticeFreeKick?.();
+                    }}
+                    className="w-full py-3.5 sm:py-4 px-5 rounded-[18px] font-black text-base sm:text-lg uppercase tracking-wider bg-amber-400 text-black border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer flex items-center justify-between outline-none focus:outline-none"
+                  >
+                    <div className="flex items-center gap-3">
+                      <FontAwesomeIcon icon={faFutbol} className="text-xl text-black" />
+                      <div className="flex flex-col text-left">
+                        <span>{t('practice.freeKick', 'FREE KICK')}</span>
+                        <span className="text-[10px] sm:text-xs font-bold text-slate-800 normal-case">
+                          {t('practice.freeKickSub', 'Instant Play • Wall defense & angle drills')}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-[10px] sm:text-xs bg-black text-white px-2.5 py-1 rounded-full font-black uppercase tracking-wider">
+                      {t('practice.instant', 'Instant')}
+                    </span>
+                  </motion.button>
+
+                  <motion.button
+                    whileHover={{ y: -2, scale: 1.015 }}
+                    whileTap={{ y: 4, scale: 0.98, boxShadow: '0px 1px 0px 0px #000' }}
+                    transition={{ type: 'spring', stiffness: 500, damping: 22 }}
+                    onClick={() => {
+                      setIsPracticeModalOpen(false);
+                      onPracticePenalty?.();
+                    }}
+                    className="w-full py-3.5 sm:py-4 px-5 rounded-[18px] font-black text-base sm:text-lg uppercase tracking-wider bg-sky-400 text-black border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer flex items-center justify-between outline-none focus:outline-none"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Target className="w-5 h-5 text-black" />
+                      <div className="flex flex-col text-left">
+                        <span>{t('practice.penalty', 'PENALTY')}</span>
+                        <span className="text-[10px] sm:text-xs font-bold text-slate-800 normal-case">
+                          {t('practice.penaltySub', '12 Yards • Target bullseye & precision shots')}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-[10px] sm:text-xs bg-black text-white px-2.5 py-1 rounded-full font-black uppercase tracking-wider">
+                      {t('practice.random', 'Targets')}
+                    </span>
+                  </motion.button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
       </div>
     </motion.div>
   );

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Trophy, X, Check } from 'lucide-react';
 import { Country, getFlagUrl, getCountryAbbr } from '../data/countries';
 import {
   GroupLetter,
@@ -131,7 +132,8 @@ export default function TournamentHubPage({
             className="px-4 py-2.5 rounded-[18px] font-black uppercase tracking-wider bg-rose-500 hover:bg-rose-400 active:scale-95 text-white border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer flex items-center gap-2 text-xs sm:text-sm outline-none focus:outline-none"
             title="Cancel current tournament and return to main menu"
           >
-            <span>✕ Cancel Tournament</span>
+            <X className="w-4 h-4 shrink-0" />
+            <span>Cancel Tournament</span>
           </motion.button>
         </div>
 
@@ -148,7 +150,7 @@ export default function TournamentHubPage({
               {isGroupStage
                 ? `Group Stage • Matchday ${currentMatchday} of 3`
                 : isUserChampion
-                ? '★ World Cup Champions ★'
+                ? 'World Cup Champions'
                 : `Knockout Stage • ${currentStage.replace('_', ' ').toUpperCase()}`}
             </p>
           </div>
@@ -229,7 +231,7 @@ export default function TournamentHubPage({
                     Group {userGroup} • Standing: <strong className="text-black font-black">{userRank}{userRank === 1 ? 'st' : userRank === 2 ? 'nd' : userRank === 3 ? 'rd' : 'th'} Place</strong> ({userStanding?.pts || 0} pts, {userStanding?.gd ? (userStanding.gd > 0 ? `+${userStanding.gd}` : userStanding.gd) : 0} GD)
                   </>
                 ) : isUserChampion ? (
-                  <span className="text-amber-700 font-black">WORLD CUP TOURNAMENT CHAMPION 🏆</span>
+                  <span className="text-amber-700 font-black">WORLD CUP TOURNAMENT CHAMPION</span>
                 ) : isUserEliminated ? (
                   <span className="text-rose-600 font-black">Eliminated in {currentStage.replace('_', ' ').toUpperCase()}</span>
                 ) : (
@@ -305,13 +307,13 @@ export default function TournamentHubPage({
           ) : (
             <div className="flex flex-col sm:flex-row items-center gap-3">
               <div className="bg-emerald-100 border-2 border-emerald-600 rounded-[18px] px-4 py-2.5 flex items-center gap-2 text-emerald-900 font-black text-xs sm:text-sm uppercase">
-                <span>✓</span>
+                <Check className="w-4 h-4 shrink-0" />
                 <span>
                   {isUserChampion
-                    ? 'Tournament Complete • Champions! 🏆'
+                    ? 'Tournament Complete • Champions!'
                     : isUserEliminated
                     ? 'Eliminated • All Matches Simulated to Final'
-                    : 'Stage Matches Completed! 🏆'}
+                    : 'Stage Matches Completed!'}
                 </span>
               </div>
               <button
@@ -554,7 +556,7 @@ export default function TournamentHubPage({
           <div className="bg-white border-[3px] border-black rounded-[20px] p-3.5 sm:p-4 shadow-[0_5px_0_0_#000] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-black text-amber-300 font-black text-base flex items-center justify-center border-2 border-black shrink-0">
-                {isGroupStage ? currentMatchday : '🏆'}
+                {isGroupStage ? currentMatchday : <Trophy className="w-5 h-5 text-amber-300" />}
               </div>
               <div>
                 <h2 className="text-base sm:text-lg font-black uppercase text-black">
@@ -614,11 +616,12 @@ export default function TournamentHubPage({
                         </span>
                         {match.isCompleted ? (
                           <span className="text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-400 font-black flex items-center gap-1">
-                            ✓ FULL TIME
+                            <Check className="w-3.5 h-3.5" />
+                            <span>FULL TIME</span>
                           </span>
                         ) : match.isUserMatch ? (
                           <span className="text-amber-900 bg-amber-300 px-2.5 py-0.5 rounded-full border border-amber-500 font-black flex items-center gap-1 animate-pulse">
-                            ★ YOUR FIXTURE
+                            <span>YOUR FIXTURE</span>
                           </span>
                         ) : (
                           <span className="text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">

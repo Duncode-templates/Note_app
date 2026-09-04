@@ -243,7 +243,7 @@ export const SurvivalOnlineResultsPage: React.FC<SurvivalOnlineResultsPageProps>
             {isPlayerDefeated && <AlertTriangle className="w-6 h-6 sm:w-8 sm:h-8 text-white" />}
             <span>
               {isPlayerWinner
-                ? `★ ${t('result.survivalVictory', 'SURVIVAL VICTORY!')} ★`
+                ? t('result.survivalVictory', 'SURVIVAL VICTORY!')
                 : isDraw
                 ? t('result.draw', 'HONOURS EVEN (TIE)')
                 : t('result.survivalDefeat', 'SURVIVAL DEFEAT')}
@@ -383,7 +383,7 @@ export const SurvivalOnlineResultsPage: React.FC<SurvivalOnlineResultsPageProps>
             >
               <div>
                 <div className="font-black text-xs sm:text-base uppercase tracking-wide">
-                  ⚔️ {t('rematch.survivalRequested', 'Opponent requested a Survival Rematch!')}
+                  {t('rematch.survivalRequested', 'Opponent requested a Survival Rematch!')}
                 </div>
                 <div className="text-[11px] sm:text-xs font-bold text-slate-800">
                   {t('rematch.survivalDesc', 'Accept to jump right back into the 1v1 Survival Duel!')}

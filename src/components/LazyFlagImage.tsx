@@ -78,7 +78,7 @@ export const LazyFlagImage: React.FC<LazyFlagImageProps> = React.memo(({
         />
       ) : (
         <div className="w-full h-full flex items-center justify-center bg-sky-800 text-white font-black text-xs uppercase tracking-wider select-none">
-          {countryCode?.toUpperCase() || alt || '🏳️'}
+          {countryCode?.toUpperCase() || alt || '--'}
         </div>
       )}
     </div>

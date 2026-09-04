@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Play, ShoppingCart, X, Target, Coins, User, Flame, Zap, Swords, Wifi, Video, Bookmark, Globe } from 'lucide-react';
+import { Play, ShoppingCart, X, Target, Coins, User, Flame, Zap, Swords, Wifi, Video, Bookmark, Globe, Crown, Rocket, Trophy, Medal } from 'lucide-react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faFutbol, faBullseye, faDumbbell, faFire, faCrosshairs } from '@fortawesome/free-solid-svg-icons';
-import { MenuItemId, GameMode, OnlineMatchRoom, SavedReplay } from './types';
+import { MenuItemId, GameMode, OnlineMatchRoom, SavedReplay, KingOfTheHillMatchState, KingOfTheHillContender } from './types';
 import CountrySelectionPage from './components/CountrySelectionPage';
 import OnlineCountrySelectionPage from './components/OnlineCountrySelectionPage';
 import TournamentTeamSelectionPage from './components/TournamentTeamSelectionPage';
@@ -11,14 +11,22 @@ import TournamentHubPage from './components/TournamentHubPage';
 import StorePage from './components/StorePage';
 import SavedReplaysPage from './components/SavedReplaysPage';
 import LanguageSelectionPage from './components/LanguageSelectionPage';
+import KingOfTheHillCountrySelectionPage from './components/KingOfTheHillCountrySelectionPage';
+import KingOfTheHillLobbyPage from './components/KingOfTheHillLobbyPage';
+import KingOfTheHillOnlineLobbyPage from './components/KingOfTheHillOnlineLobbyPage';
 import Stadium3DView from './components/Stadium3DView';
 import OnlineMatchModal from './components/OnlineMatchModal';
 import SurvivalHubModal from './components/SurvivalHubModal';
 import WagerArenaSelectModal from './components/WagerArenaSelectModal';
+import KingOfTheHillSelectModal from './components/KingOfTheHillSelectModal';
+import KingOfTheHillModal from './components/KingOfTheHillModal';
+import KingOfTheHillRulesModal from './components/KingOfTheHillRulesModal';
+import KingOfTheHillController from './components/KingOfTheHillController';
 import LazyFlagImage from './components/LazyFlagImage';
 import TrophyImage from './components/TrophyImage';
 import CoinIcon from './components/CoinIcon';
 import { WagerTier } from './data/wagerArenas';
+import { KING_WAGER_TIERS, createKingOfTheHillMatch } from './data/kingOfTheHillData';
 import { Country, getFlagUrl, COUNTRIES_DATA } from './data/countries';
 import {
   TournamentState,
@@ -33,14 +41,30 @@ import {
   saveTournamentState,
   clearTournamentState,
 } from './data/tournamentData';
-import { initAudioUnlockListener, preloadAudioBuffer, preloadImage } from './utils/mediaPreloader';
+import {
+  initAudioUnlockListener,
+  preloadAudioBuffer,
+  preloadImage,
+} from './utils/mediaPreloader';
 import { onlineMatchManager } from './utils/onlineMatchManager';
 import { savedReplayManager } from './utils/savedReplayManager';
 import { crazyGamesSDK } from './utils/crazyGamesSDK';
 import { useTranslation, SUPPORTED_LANGUAGES } from './utils/i18n';
 
 type ModalType = 'quick_play' | 'tournament' | 'practice' | null;
-type ViewState = 'menu' | 'country_selection' | 'online_country_selection' | 'tournament_selection' | 'tournament_hub' | 'stadium' | 'store' | 'saved_replays' | 'language_selection';
+type ViewState =
+  | 'menu'
+  | 'country_selection'
+  | 'online_country_selection'
+  | 'tournament_selection'
+  | 'tournament_hub'
+  | 'stadium'
+  | 'store'
+  | 'saved_replays'
+  | 'language_selection'
+  | 'koth_country_selection'
+  | 'koth_lobby'
+  | 'koth_online_lobby';
 
 const COINS_DATA_KEY = 'crazygames_user_coins';
 const UNLOCKED_BALLS_KEY = 'fkl_unlocked_balls_v1';
@@ -124,10 +148,14 @@ export default function App() {
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [activeModal, setActiveModal] = useState<ModalType>(null);
   const [isOnlineModalOpen, setIsOnlineModalOpen] = useState(false);
-  const [onlineModalGameMode, setOnlineModalGameMode] = useState<'match' | 'penalty_training' | 'survival'>('match');
+  const [onlineModalGameMode, setOnlineModalGameMode] = useState<'match' | 'penalty_training' | 'survival' | 'king_of_the_hill'>('match');
   const [onlineModalWagerTier, setOnlineModalWagerTier] = useState<WagerTier | undefined>(undefined);
   const [isWagerArenaModalOpen, setIsWagerArenaModalOpen] = useState(false);
   const [isSurvivalModalOpen, setIsSurvivalModalOpen] = useState(false);
+  const [isKingOfTheHillSelectModalOpen, setIsKingOfTheHillSelectModalOpen] = useState(false);
+  const [isKingOfTheHillModalOpen, setIsKingOfTheHillModalOpen] = useState(false);
+  const [isKingOfTheHillRulesModalOpen, setIsKingOfTheHillRulesModalOpen] = useState(false);
+  const [activeKingMatchState, setActiveKingMatchState] = useState<KingOfTheHillMatchState | null>(null);
   const [bestSurvivalStreak, setBestSurvivalStreak] = useState<number>(() => loadInitialSurvivalBest());
   const [activeSavedReplay, setActiveSavedReplay] = useState<SavedReplay | null>(null);
   const [savedReplaysCount, setSavedReplaysCount] = useState<number>(() => savedReplayManager.getReplays().length);
@@ -259,8 +287,12 @@ export default function App() {
           const joined = await onlineMatchManager.joinRoom(inviteRoomId);
           if (joined && onlineMatchManager.currentRoom) {
             setActiveOnlineRoom(onlineMatchManager.currentRoom);
-            setModeContext('Online 1v1 Match');
-            setCurrentView('online_country_selection');
+            if (onlineMatchManager.currentRoom.gameMode === 'king_of_the_hill') {
+              setCurrentView('koth_online_lobby');
+            } else {
+              setModeContext('Online 1v1 Match');
+              setCurrentView('online_country_selection');
+            }
           }
         }
       } catch (err) {
@@ -293,11 +325,63 @@ export default function App() {
       setIsSurvivalModalOpen(true);
     } else if (id === 'wager_arena') {
       setIsWagerArenaModalOpen(true);
+    } else if (id === 'king_of_the_hill') {
+      const hasSeenRules = localStorage.getItem('koth_rules_seen') === 'true';
+      if (!hasSeenRules) {
+        setIsKingOfTheHillRulesModalOpen(true);
+      } else {
+        setIsKingOfTheHillSelectModalOpen(true);
+      }
     } else if (id === 'shop') {
       setCurrentView('store');
     } else {
       setSelectedOption(id);
     }
+  };
+
+  const handleContinueKingOfTheHillRules = () => {
+    localStorage.setItem('koth_rules_seen', 'true');
+    setIsKingOfTheHillRulesModalOpen(false);
+    setIsKingOfTheHillSelectModalOpen(true);
+  };
+
+  const handleCloseKingOfTheHillRules = () => {
+    localStorage.setItem('koth_rules_seen', 'true');
+    setIsKingOfTheHillRulesModalOpen(false);
+  };
+
+  const handleChooseKingOfTheHillMode = (mode: 'Online' | 'Offline') => {
+    setIsKingOfTheHillSelectModalOpen(false);
+    if (mode === 'Offline') {
+      setCurrentView('koth_country_selection');
+    } else {
+      setOnlineModalWagerTier(undefined);
+      setOnlineModalGameMode('king_of_the_hill');
+      setIsOnlineModalOpen(true);
+    }
+  };
+
+  const handleStartKingOfTheHill = (
+    playerCount: 4 = 4,
+    tierId: 'free' | 'rookie' | 'pro' | 'champion' = 'free',
+    customContenders?: KingOfTheHillContender[]
+  ) => {
+    setIsKingOfTheHillModalOpen(false);
+    const myCountry = selectedCountry || COUNTRIES_DATA[0];
+    setSelectedCountry(myCountry);
+    const match = createKingOfTheHillMatch(
+      playerName || 'Striker_Legend',
+      myCountry,
+      userProfilePicture || undefined,
+      4,
+      tierId,
+      customContenders
+    );
+    setActiveKingMatchState(match);
+    setGameMode('king_of_the_hill');
+    setModeContext('King of the Hill • 4 Players');
+    setSelectedOption('King of the Hill • 4 Players');
+    setCurrentView('stadium');
   };
 
   const handleSelectWagerTier = (tier: WagerTier) => {
@@ -454,7 +538,14 @@ export default function App() {
   const handleOnlineRoomConnected = (room: OnlineMatchRoom) => {
     setActiveOnlineRoom(room);
     setIsOnlineModalOpen(false);
-    setCurrentView('online_country_selection');
+    if (!selectedCountry) {
+      setSelectedCountry(COUNTRIES_DATA[0]);
+    }
+    if (room.gameMode === 'king_of_the_hill') {
+      setCurrentView('koth_online_lobby');
+    } else {
+      setCurrentView('online_country_selection');
+    }
   };
 
   const handleStartOnlineMatch = (myTeam: Country, oppTeam: Country, room: OnlineMatchRoom) => {
@@ -485,6 +576,36 @@ export default function App() {
   };
 
   if (currentView === 'stadium' && selectedCountry) {
+    if (gameMode === 'king_of_the_hill' && activeKingMatchState) {
+      return (
+        <KingOfTheHillController
+          country={selectedCountry}
+          initialMatchState={activeKingMatchState}
+          onBack={() => {
+            if (activeOnlineRoom) {
+              onlineMatchManager.leaveRoom();
+              setActiveOnlineRoom(null);
+            }
+            setActiveKingMatchState(null);
+            setGameMode('match');
+            setModeContext('1v1 Match');
+            setSelectedOption('Quick Match');
+            setCurrentView('menu');
+          }}
+          onEarnCoins={(amount) => {
+            updateCoins((prev) => prev + amount);
+          }}
+          equippedBallId={equippedBallId}
+          equippedPitchId={equippedPitchId}
+          onRematchRequested={(pCount, tier) => {
+            handleStartKingOfTheHill(pCount, tier);
+          }}
+          isOnline={Boolean(activeOnlineRoom)}
+          onlineRoom={activeOnlineRoom}
+        />
+      );
+    }
+
     const isTournament = Boolean(activeTournamentMatch || modeContext.toLowerCase().includes('world cup'));
 
     return (
@@ -637,6 +758,8 @@ export default function App() {
           setGameMode('match');
           setCurrentView('country_selection');
         }}
+        onPracticeFreeKick={handleChooseFreeKickPractice}
+        onPracticePenalty={handleChoosePenaltyPractice}
         onPlayReplay={(replay) => {
           setActiveSavedReplay(replay);
           const kicker = COUNTRIES_DATA.find((c) => c.code === replay.kickerCountryCode) || COUNTRIES_DATA[0];
@@ -664,6 +787,64 @@ export default function App() {
     return (
       <LanguageSelectionPage
         onBack={() => setCurrentView('menu')}
+      />
+    );
+  }
+
+  if (currentView === 'koth_country_selection') {
+    return (
+      <KingOfTheHillCountrySelectionPage
+        initialCountry={selectedCountry}
+        onBack={() => {
+          setGameMode('match');
+          setCurrentView('menu');
+        }}
+        onSelectCountry={(country) => {
+          setSelectedCountry(country);
+          setCurrentView('koth_lobby');
+        }}
+      />
+    );
+  }
+
+  if (currentView === 'koth_lobby') {
+    const kothUserCountry = selectedCountry || COUNTRIES_DATA[0];
+    return (
+      <KingOfTheHillLobbyPage
+        userCountry={kothUserCountry}
+        playerName={playerName || 'Striker_Legend'}
+        userProfilePicture={userProfilePicture}
+        onBack={() => setCurrentView('koth_country_selection')}
+        onStartMatch={(contenders) => {
+          handleStartKingOfTheHill(4, 'free', contenders);
+        }}
+      />
+    );
+  }
+
+  if (currentView === 'koth_online_lobby' && activeOnlineRoom) {
+    const kothUserCountry = selectedCountry || COUNTRIES_DATA[0];
+    return (
+      <KingOfTheHillOnlineLobbyPage
+        room={activeOnlineRoom}
+        userCountry={kothUserCountry}
+        playerName={playerName || 'Striker_Legend'}
+        userProfilePicture={userProfilePicture}
+        onLeaveRoom={() => {
+          onlineMatchManager.leaveRoom();
+          setActiveOnlineRoom(null);
+          setCurrentView('menu');
+        }}
+        onStartOnlineMatch={(kothState) => {
+          setActiveKingMatchState(kothState);
+          setGameMode('king_of_the_hill');
+          setModeContext(`King of the Hill Online • Room ${activeOnlineRoom.roomId}`);
+          setSelectedOption(`King of the Hill 4P Tournament`);
+          setCurrentView('stadium');
+        }}
+        onSelectCountry={(country) => {
+          setSelectedCountry(country);
+        }}
       />
     );
   }
@@ -841,7 +1022,7 @@ export default function App() {
                   </span>
                 </div>
                 <span className="text-[11px] sm:text-xs md:text-sm font-bold text-rose-950 uppercase tracking-wider">
-                  {t('survival.endlessStreak', 'Endless Streak')} • {t('survival.best', 'Best')}: {bestSurvivalStreak} 🔥
+                  {t('survival.endlessStreak', 'Endless Streak')} • {t('survival.best', 'Best')}: {bestSurvivalStreak}
                 </span>
               </div>
             </div>
@@ -856,7 +1037,8 @@ export default function App() {
                 <span className="hidden xs:inline">{t('common.online', 'ONLINE')}</span>
               </div>
               <div className="hidden xs:flex items-center gap-1 bg-white/90 px-2.5 py-1 rounded-full border-[2px] border-black font-black text-xs text-black uppercase">
-                <span>🔥 {t('survival.streak', 'STREAK')}</span>
+                <Flame className="w-3.5 h-3.5 text-orange-500 fill-orange-500" />
+                <span>{t('survival.streak', 'STREAK')}</span>
               </div>
             </div>
           </motion.button>
@@ -907,6 +1089,52 @@ export default function App() {
             </div>
           </motion.button>
 
+          {/* 4. ⚔️ Sudden Death: King of the Hill (Live Knockout Shootout) */}
+          <motion.button
+            variants={{
+              hidden: { opacity: 0, x: -60, scale: 0.95 },
+              visible: {
+                opacity: 1,
+                x: 0,
+                scale: 1,
+                transition: { type: 'spring', stiffness: 400, damping: 24 },
+              },
+            }}
+            whileHover={{ y: -2, scale: 1.015 }}
+            whileTap={{ y: 5, scale: 0.98, boxShadow: '0px 2px 0px 0px #000' }}
+            onClick={() => handleSelect('king_of_the_hill')}
+            className="w-full bg-gradient-to-r from-purple-500 via-indigo-400 to-amber-300 border-[3px] sm:border-[3.5px] border-black shadow-[0_5px_0_0_#000] sm:shadow-[0_7px_0_0_#000] rounded-[18px] sm:rounded-[22px] p-3 sm:p-4 md:p-5 text-left font-black cursor-pointer flex items-center justify-between outline-none focus:outline-none relative overflow-hidden group"
+          >
+            <div className="flex items-center gap-3.5 sm:gap-4">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-amber-400 border-[2.5px] border-black rounded-[14px] flex items-center justify-center shrink-0 shadow-xs">
+                <Crown className="w-6 h-6 sm:w-7 sm:h-7 text-black fill-black" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-lg sm:text-xl md:text-2xl font-black text-white uppercase tracking-wider drop-shadow-xs">
+                  {t('menu.kingOfTheHill', 'KING OF THE HILL')}
+                </span>
+                <span className="text-[11px] sm:text-xs md:text-sm font-bold text-amber-100 uppercase tracking-wider">
+                  4 Players • Parallel Shootout • 1 Champion
+                </span>
+              </div>
+            </div>
+
+            {/* Right Controls: Online Icon & Crown Badge */}
+            <div className="flex items-center gap-1.5 shrink-0 translate-y-1.5 sm:translate-y-2 mt-auto">
+              <div
+                className="flex items-center gap-1 bg-black text-amber-300 border-[1.5px] border-black rounded-full px-2 sm:px-2.5 py-1 text-[9px] sm:text-[10px] font-black uppercase tracking-wider shadow-2xs"
+                title="Live 4-Player Elimination Shootout"
+              >
+                <Wifi className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-300 stroke-[2.5]" />
+                <span className="hidden xs:inline">LIVE</span>
+              </div>
+              <div className="hidden xs:flex items-center gap-1.5 bg-black text-amber-300 px-3 py-1.5 rounded-full border-[2px] border-black font-black text-xs uppercase shadow-xs">
+                <Crown className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
+                <span>KNOCKOUT</span>
+              </div>
+            </div>
+          </motion.button>
+
           {/* FIFA World Cup Button */}
           <motion.button
             variants={{
@@ -937,37 +1165,6 @@ export default function App() {
               </div>
             </div>
           </motion.button>
-
-          {/* Practice Button */}
-          <motion.button
-            variants={{
-              hidden: { opacity: 0, x: -60, scale: 0.95 },
-              visible: {
-                opacity: 1,
-                x: 0,
-                scale: 1,
-                transition: { type: 'spring', stiffness: 400, damping: 24 },
-              },
-            }}
-            whileHover={{ y: -2, scale: 1.015 }}
-            whileTap={{ y: 5, scale: 0.98, boxShadow: '0px 2px 0px 0px #000' }}
-            onClick={() => handleSelect('practice')}
-            className="w-full bg-white border-[3px] sm:border-[3.5px] border-black shadow-[0_5px_0_0_#000] sm:shadow-[0_7px_0_0_#000] rounded-[18px] sm:rounded-[22px] p-3 sm:p-4 md:p-5 text-left font-black cursor-pointer flex items-center justify-between outline-none focus:outline-none relative overflow-hidden"
-          >
-            <div className="flex items-center gap-3.5 sm:gap-4">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center shrink-0">
-                <FontAwesomeIcon icon={faFutbol} className="text-2xl sm:text-3xl md:text-4xl text-black" />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-lg sm:text-xl md:text-2xl font-black text-black uppercase tracking-wider">
-                  {t('menu.practice', 'PRACTICE')}
-                </span>
-                <span className="text-[11px] sm:text-xs md:text-sm font-bold text-slate-700 uppercase tracking-wider">
-                  {t('menu.practiceSub', 'Free Kick Training')}
-                </span>
-              </div>
-            </div>
-          </motion.button>
         </motion.div>
 
         {/* User Profile Card (Clickable to view Profile & Saved Replays) */}
@@ -979,7 +1176,7 @@ export default function App() {
           whileTap={{ scale: 0.97 }}
           onClick={() => setCurrentView('saved_replays')}
           className="mt-4 sm:mt-5 bg-white/95 hover:bg-white backdrop-blur-md border-[3px] border-black shadow-[0_4px_0_0_#000] hover:shadow-[0_6px_0_0_#000] rounded-[18px] sm:rounded-[20px] px-3.5 sm:px-4 py-2 sm:py-2.5 flex items-center gap-2.5 sm:gap-3 cursor-pointer transition-all group"
-          title="Click to view Profile and Saved Replays"
+          title="Click to view Profile, Saved Replays & Practice Drills"
         >
           {/* Profile Picture (Avatar) */}
           <div className="relative shrink-0">
@@ -1014,7 +1211,7 @@ export default function App() {
               {playerName}
             </span>
             <span className="text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wider text-slate-500 group-hover:text-amber-600 transition-colors">
-              {t('profile.savedReplaysStats', 'SAVED REPLAYS & STATS')} →
+              {t('profile.profileStatsPractice', 'PROFILE, STATS & PRACTICE')} →
             </span>
           </div>
 
@@ -1265,6 +1462,8 @@ export default function App() {
             ? `${onlineModalWagerTier.name} ${t('wager.arena', 'Arena')}`
             : onlineModalGameMode === 'survival'
             ? t('survival.onlineSurvivalTitle', 'ONLINE SURVIVAL 1V1')
+            : onlineModalGameMode === 'king_of_the_hill'
+            ? t('koth.onlineTitle', 'ONLINE KING OF THE HILL')
             : t('online.matchTitle', 'ONLINE MATCH')
         }
         subtitle={
@@ -1272,6 +1471,8 @@ export default function App() {
             ? `${t('wager.bet', 'Bet')} ${onlineModalWagerTier.entryFee.toLocaleString()} ${t('common.coins', 'Coins')} • ${t('wager.winnerTakes', 'Winner Takes')} ${onlineModalWagerTier.prizePot.toLocaleString()} ${t('common.coins', 'Coins')} ${t('wager.prizePot', 'Prize Pot!')}`
             : onlineModalGameMode === 'survival'
             ? t('survival.onlineSurvivalSubtitle', '3 Lives • Live 1v1 Survival Duel • Endless Streak Challenge')
+            : onlineModalGameMode === 'king_of_the_hill'
+            ? t('koth.onlineSub', 'Sudden Death Knockout • Challenge live players or invite friends')
             : t('online.matchSubtitle', 'Connect and pick your country together in real-time:')
         }
         onClose={() => {
@@ -1314,7 +1515,8 @@ export default function App() {
 
               {/* Coming Soon Badge */}
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-amber-400 to-yellow-300 border-[2px] border-black shadow-[0_2px_0_0_#000] text-black font-black text-xs uppercase tracking-wider mb-2">
-                <span>🚀 {t('tournament.inDevelopment', 'IN DEVELOPMENT')}</span>
+                <Rocket className="w-3.5 h-3.5 text-black" />
+                <span>{t('tournament.inDevelopment', 'IN DEVELOPMENT')}</span>
               </div>
 
               {/* Title & Tagline */}
@@ -1328,7 +1530,7 @@ export default function App() {
               {/* Feature Preview Cards */}
               <div className="w-full bg-slate-50 border-[2.5px] border-black rounded-[20px] p-3.5 sm:p-4 flex flex-col gap-2.5 mb-6 text-left shadow-inner">
                 <div className="flex items-center gap-2.5">
-                  <span className="text-base">🏆</span>
+                  <Trophy className="w-5 h-5 text-amber-500 shrink-0" />
                   <div className="flex flex-col">
                     <span className="text-xs font-black text-black uppercase">
                       {t('tournament.knockoutBrackets', '16-Player Knockout Brackets')}
@@ -1340,7 +1542,7 @@ export default function App() {
                 </div>
 
                 <div className="flex items-center gap-2.5 border-t border-slate-200 pt-2">
-                  <span className="text-base">🌍</span>
+                  <Globe className="w-5 h-5 text-sky-500 shrink-0" />
                   <div className="flex flex-col">
                     <span className="text-xs font-black text-black uppercase">
                       {t('tournament.globalLeaderboards', 'Global Season Leaderboards')}
@@ -1352,7 +1554,7 @@ export default function App() {
                 </div>
 
                 <div className="flex items-center gap-2.5 border-t border-slate-200 pt-2">
-                  <span className="text-base">🥇</span>
+                  <Medal className="w-5 h-5 text-amber-600 shrink-0" />
                   <div className="flex flex-col">
                     <span className="text-xs font-black text-black uppercase">
                       {t('tournament.exclusiveUnlockables', 'Exclusive Champion Kits & Balls')}
@@ -1488,6 +1690,34 @@ export default function App() {
         userCoins={coins}
         onClose={() => setIsWagerArenaModalOpen(false)}
         onSelectTier={handleSelectWagerTier}
+      />
+
+      {/* King of the Hill Online / Offline Mode Select Modal */}
+      <KingOfTheHillSelectModal
+        isOpen={isKingOfTheHillSelectModalOpen}
+        onClose={() => setIsKingOfTheHillSelectModalOpen(false)}
+        onSelectMode={handleChooseKingOfTheHillMode}
+        onOpenRules={() => setIsKingOfTheHillRulesModalOpen(true)}
+      />
+
+      {/* King of the Hill Offline Lobby Modal */}
+      <KingOfTheHillModal
+        isOpen={isKingOfTheHillModalOpen}
+        userCoins={coins}
+        onClose={() => setIsKingOfTheHillModalOpen(false)}
+        onBack={() => {
+          setIsKingOfTheHillModalOpen(false);
+          setIsKingOfTheHillSelectModalOpen(true);
+        }}
+        onStartMatch={handleStartKingOfTheHill}
+        onOpenRules={() => setIsKingOfTheHillRulesModalOpen(true)}
+      />
+
+      {/* King of the Hill Rules & How to Play Modal */}
+      <KingOfTheHillRulesModal
+        isOpen={isKingOfTheHillRulesModalOpen}
+        onClose={handleCloseKingOfTheHillRules}
+        onContinue={handleContinueKingOfTheHillRules}
       />
     </div>
   );

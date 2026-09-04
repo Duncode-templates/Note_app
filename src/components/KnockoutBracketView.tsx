@@ -366,7 +366,7 @@ export default function KnockoutBracketView({
                     {championTeam.name}
                   </span>
                   <span className="text-[9px] font-black uppercase bg-black text-amber-300 px-2 py-0.5 rounded-full mt-0.5">
-                    {t('tournament.worldChampions', 'WORLD CHAMPIONS 🏆')}
+                    {t('tournament.worldChampions', 'WORLD CHAMPIONS')}
                   </span>
                 </div>
               ) : (

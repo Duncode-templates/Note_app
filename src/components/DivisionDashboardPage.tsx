@@ -318,16 +318,16 @@ export default function DivisionDashboardPage({
           <div className="grid grid-cols-3 gap-1.5 sm:gap-2 text-center text-xs font-black">
             <div className="bg-emerald-50 border-[1.5px] border-black rounded-[10px] p-1.5 flex flex-col items-center justify-center">
               <span className="text-emerald-900 text-[10px] uppercase font-black">{t('divisions.win', 'WIN')}</span>
-              <span className="text-black font-black text-xs">+3 {t('divisions.pts', 'PTS')} • +10 🪙</span>
+              <span className="text-black font-black text-xs">+3 {t('divisions.pts', 'PTS')} • +10 COINS</span>
             </div>
             <div className="bg-amber-50 border-[1.5px] border-black rounded-[10px] p-1.5 flex flex-col items-center justify-center">
               <span className="text-amber-900 text-[10px] uppercase font-black">{t('divisions.draw', 'DRAW')}</span>
-              <span className="text-black font-black text-xs">+1 {t('divisions.pt', 'PT')} • 0 🪙</span>
+              <span className="text-black font-black text-xs">+1 {t('divisions.pt', 'PT')} • 0 COINS</span>
             </div>
             <div className="bg-rose-50 border-[1.5px] border-black rounded-[10px] p-1.5 flex flex-col items-center justify-center">
               <span className="text-rose-900 text-[10px] uppercase font-black">{t('divisions.loss', 'LOSS')}</span>
               <span className="text-black font-black text-xs">
-                {tier.pointsLostOnDefeat > 0 ? `-${tier.pointsLostOnDefeat} ${t('divisions.pts', 'PTS')}` : `0 ${t('divisions.pts', 'PTS')}`} • 0 🪙
+                {tier.pointsLostOnDefeat > 0 ? `-${tier.pointsLostOnDefeat} ${t('divisions.pts', 'PTS')}` : `0 ${t('divisions.pts', 'PTS')}`} • 0 COINS
               </span>
             </div>
           </div>
