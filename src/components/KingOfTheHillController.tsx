@@ -692,6 +692,7 @@ export default function KingOfTheHillController({
         matchState={matchState}
         onRematch={handleRematch}
         onReturnToMenu={onBack}
+        isOnline={isOnlineMatch}
       />
     </div>
   );

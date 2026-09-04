@@ -16,6 +16,8 @@ import {
   RefreshCw,
   ArrowLeft,
   Search,
+  Globe,
+  Lock,
 } from 'lucide-react';
 import { Country, COUNTRIES_DATA } from '../data/countries';
 import { onlineMatchManager } from '../utils/onlineMatchManager';
@@ -33,12 +35,12 @@ interface OnlineMatchModalProps {
   prizePot?: number;
   title?: string;
   subtitle?: string;
-  initialStep?: 'menu' | 'create' | 'join' | 'searching' | 'public_rooms';
+  initialStep?: 'menu' | 'create' | 'join' | 'public_rooms';
   onClose: () => void;
   onRoomConnected: (room: OnlineMatchRoom) => void;
 }
 
-type OnlineStep = 'menu' | 'create' | 'join' | 'searching' | 'public_rooms';
+type OnlineStep = 'menu' | 'create' | 'join' | 'public_rooms';
 
 export default function OnlineMatchModal({
   isOpen,
@@ -60,13 +62,30 @@ export default function OnlineMatchModal({
   const [isCopied, setIsCopied] = useState(false);
   const [isLinkCopied, setIsLinkCopied] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [searchTimer, setSearchTimer] = useState(0);
+  const [isRoomPublic, setIsRoomPublic] = useState<boolean>(true);
+  const [kickedMessage, setKickedMessage] = useState<string | null>(null);
 
   // Public Rooms State
   const [publicRooms, setPublicRooms] = useState<OnlineMatchRoom[]>([]);
   const [isLoadingPublicRooms, setIsLoadingPublicRooms] = useState(false);
   const [publicRoomFilter, setPublicRoomFilter] = useState<'all' | 'king_of_the_hill' | 'match'>('all');
   const [roomSearchQuery, setRoomSearchQuery] = useState('');
+
+  // Listen for kicked event while modal is mounted
+  useEffect(() => {
+    const unsubKicked = onlineMatchManager.on('player_kicked_from_room', (payload) => {
+      setStep('menu');
+      setKickedMessage(payload?.reason || 'You were kicked from room');
+      const timer = setTimeout(() => {
+        setKickedMessage(null);
+      }, 6000);
+      return () => clearTimeout(timer);
+    });
+
+    return () => {
+      unsubKicked();
+    };
+  }, []);
 
   // Reset state when opening/closing
   useEffect(() => {
@@ -76,6 +95,7 @@ export default function OnlineMatchModal({
       setErrorMessage(null);
       setIsCopied(false);
       setIsLinkCopied(false);
+      setIsRoomPublic(true);
       if (gameMode === 'king_of_the_hill') {
         setPublicRoomFilter('king_of_the_hill');
       } else {
@@ -160,18 +180,6 @@ export default function OnlineMatchModal({
     };
   }, [isOpen, onClose, onRoomConnected]);
 
-  // Search Timer
-  useEffect(() => {
-    let interval: any;
-    if (step === 'searching') {
-      setSearchTimer(0);
-      interval = setInterval(() => {
-        setSearchTimer((prev) => prev + 1);
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [step]);
-
   const handleStartCreateRoom = async () => {
     setErrorMessage(null);
     if (gameMode === 'king_of_the_hill') {
@@ -184,7 +192,8 @@ export default function OnlineMatchModal({
         countryCode,
         wagerTier,
         entryFee,
-        prizePot
+        prizePot,
+        isRoomPublic
       );
       if (onlineMatchManager.currentRoom) {
         crazyGamesSDK.hideInviteButton();
@@ -202,7 +211,8 @@ export default function OnlineMatchModal({
       null,
       wagerTier,
       entryFee,
-      prizePot
+      prizePot,
+      isRoomPublic
     );
     setCreatedRoomCode(code);
   };
@@ -227,25 +237,9 @@ export default function OnlineMatchModal({
     }
   };
 
-  const handleStartFindMatch = async () => {
-    setErrorMessage(null);
-    setStep('searching');
-    const success = await onlineMatchManager.findMatch(gameMode, wagerTier, entryFee, prizePot);
-    if (!success && !onlineMatchManager.isSearchingMatchmaking) {
-      // If immediate failure and not searching
-      if (!errorMessage) {
-        setErrorMessage('Could not connect to matchmaking pool. Please try again.');
-      }
-    }
-  };
-
   const handleCancelAndBack = () => {
     crazyGamesSDK.hideInviteButton();
-    if (step === 'searching') {
-      onlineMatchManager.cancelMatchmaking();
-    } else {
-      onlineMatchManager.leaveRoom();
-    }
+    onlineMatchManager.leaveRoom();
     setErrorMessage(null);
     setStep('menu');
   };
@@ -289,11 +283,7 @@ export default function OnlineMatchModal({
           <button
             onClick={() => {
               crazyGamesSDK.hideInviteButton();
-              if (step === 'searching') {
-                onlineMatchManager.cancelMatchmaking();
-              } else {
-                onlineMatchManager.leaveRoom();
-              }
+              onlineMatchManager.leaveRoom();
               onClose();
             }}
             className="absolute top-4 right-4 text-black hover:bg-rose-500 hover:text-white font-black text-xl w-9 h-9 flex items-center justify-center rounded-full border-2 border-black transition-all cursor-pointer bg-slate-100 shadow-2xs"
@@ -301,8 +291,31 @@ export default function OnlineMatchModal({
             <X className="w-5 h-5" />
           </button>
 
+          {/* Kicked from room notification banner */}
+          <AnimatePresence>
+            {kickedMessage && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="w-full p-3 mb-4 bg-rose-500 text-white font-black text-xs sm:text-sm uppercase tracking-wider rounded-[16px] border-[3px] border-black flex items-center justify-between shadow-[0_4px_0_0_#000]"
+              >
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5 shrink-0 text-white" />
+                  <span>{kickedMessage}</span>
+                </div>
+                <button
+                  onClick={() => setKickedMessage(null)}
+                  className="w-6 h-6 rounded-full bg-black/20 hover:bg-black/40 flex items-center justify-center text-white cursor-pointer shrink-0 transition-colors ml-2"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* ============================================================ */}
-          {/* STEP 1: INITIAL 3-BUTTON MODAL (Find Match, Create, Join) */}
+          {/* STEP 1: INITIAL 3-BUTTON MODAL (Public Rooms, Create, Join) */}
           {/* ============================================================ */}
           {step === 'menu' && (
             <div>
@@ -323,37 +336,25 @@ export default function OnlineMatchModal({
 
               {/* 3 Main Action Buttons */}
               <div className="flex flex-col gap-3.5">
-                {/* 1. Quick Matchmaking (or Rooms for King of the Hill) */}
-                {gameMode === 'king_of_the_hill' ? (
-                  <motion.button
-                    whileHover={{ y: -2, scale: 1.015 }}
-                    whileTap={{ y: 4, scale: 0.98, boxShadow: '0px 1px 0px 0px #000' }}
-                    transition={{ type: 'spring', stiffness: 500, damping: 22 }}
-                    onClick={() => {
-                      setPublicRoomFilter('king_of_the_hill');
-                      setStep('public_rooms');
-                    }}
-                    className="w-full py-4 px-5 rounded-[18px] font-black text-base uppercase tracking-wider bg-gradient-to-r from-teal-400 via-emerald-300 to-teal-400 text-black border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer flex items-center justify-center outline-none"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Radio className="w-5 h-5 text-black animate-pulse" />
-                      <span>{t('online.rooms', 'ROOMS')}</span>
-                    </div>
-                  </motion.button>
-                ) : (
-                  <motion.button
-                    whileHover={{ y: -2, scale: 1.015 }}
-                    whileTap={{ y: 4, scale: 0.98, boxShadow: '0px 1px 0px 0px #000' }}
-                    transition={{ type: 'spring', stiffness: 500, damping: 22 }}
-                    onClick={handleStartFindMatch}
-                    className="w-full py-4 px-5 rounded-[18px] font-black text-base uppercase tracking-wider bg-gradient-to-r from-amber-400 to-yellow-300 text-black border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer flex items-center justify-center outline-none"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Zap className="w-5 h-5 fill-black text-black" />
-                      <span>{t('online.findMatch', 'FIND A MATCH')}</span>
-                    </div>
-                  </motion.button>
-                )}
+                {/* 1. Public Rooms Browser */}
+                <motion.button
+                  whileHover={{ y: -2, scale: 1.015 }}
+                  whileTap={{ y: 4, scale: 0.98, boxShadow: '0px 1px 0px 0px #000' }}
+                  transition={{ type: 'spring', stiffness: 500, damping: 22 }}
+                  onClick={() => {
+                    setPublicRoomFilter(gameMode === 'king_of_the_hill' ? 'king_of_the_hill' : 'all');
+                    setStep('public_rooms');
+                  }}
+                  className="w-full py-4 px-5 rounded-[18px] font-black text-base uppercase tracking-wider bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-400 text-black border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer flex items-center justify-between outline-none"
+                >
+                  <div className="flex items-center gap-3">
+                    <Radio className="w-5 h-5 text-black animate-pulse" />
+                    <span>{t('online.publicRooms', 'PUBLIC ROOMS')}</span>
+                  </div>
+                  <span className="text-[11px] font-black bg-black text-white px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                    {publicRooms.length > 0 ? `${publicRooms.length} OPEN` : 'BROWSE'}
+                  </span>
+                </motion.button>
 
                 {/* 2. Create a Room */}
                 <motion.button
@@ -375,7 +376,7 @@ export default function OnlineMatchModal({
                   whileTap={{ y: 4, scale: 0.98, boxShadow: '0px 1px 0px 0px #000' }}
                   transition={{ type: 'spring', stiffness: 500, damping: 22 }}
                   onClick={handleStartJoinRoom}
-                  className="w-full py-4 px-5 rounded-[18px] font-black text-base uppercase tracking-wider bg-emerald-400 text-black border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer flex items-center justify-center outline-none"
+                  className="w-full py-4 px-5 rounded-[18px] font-black text-base uppercase tracking-wider bg-amber-400 text-black border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer flex items-center justify-center outline-none"
                 >
                   <div className="flex items-center gap-3">
                     <LogIn className="w-5 h-5 text-black" />
@@ -403,7 +404,7 @@ export default function OnlineMatchModal({
               </p>
 
               {/* 5-Digit Code Card */}
-              <div className="w-full bg-slate-100 border-[3px] border-black rounded-[20px] p-4 flex flex-col items-center gap-3 mb-5 shadow-inner">
+              <div className="w-full bg-slate-100 border-[3px] border-black rounded-[20px] p-4 flex flex-col items-center gap-3 mb-4 shadow-inner">
                 <span className="font-mono font-black text-4xl sm:text-5xl text-black tracking-[0.25em] pl-2">
                   {createdRoomCode || '.....'}
                 </span>
@@ -423,6 +424,65 @@ export default function OnlineMatchModal({
                   >
                     {isLinkCopied ? <Check className="w-4 h-4 text-emerald-900" /> : <LinkIcon className="w-4 h-4 text-black" />}
                     <span>{isLinkCopied ? t('online.linkCopied', 'LINK COPIED!') : t('online.inviteLink', 'INVITE LINK')}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Public / Private Room Visibility Toggle */}
+              <div className="w-full bg-slate-50 border-[2.5px] border-black rounded-[20px] p-3.5 mb-4 shadow-2xs">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 text-left min-w-0">
+                    <div className={`w-9 h-9 rounded-[12px] border-2 border-black flex items-center justify-center shrink-0 ${
+                      isRoomPublic ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800'
+                    }`}>
+                      {isRoomPublic ? (
+                        <Globe className="w-5 h-5 stroke-[2.5]" />
+                      ) : (
+                        <Lock className="w-5 h-5 stroke-[2.5]" />
+                      )}
+                    </div>
+                    <div className="flex flex-col min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-black text-xs sm:text-sm uppercase tracking-wider text-black">
+                          {isRoomPublic ? t('online.publicRoom', 'PUBLIC ROOM') : t('online.privateRoom', 'PRIVATE ROOM')}
+                        </span>
+                        <span className={`text-[9px] font-black px-1.5 py-0.2 rounded uppercase border ${
+                          isRoomPublic
+                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                            : 'bg-amber-100 text-amber-800 border-amber-300'
+                        }`}>
+                          {isRoomPublic ? 'OPEN' : 'HIDDEN'}
+                        </span>
+                      </div>
+                      <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 leading-tight">
+                        {isRoomPublic
+                          ? t('online.publicDesc', 'Visible in Public Rooms for others to join')
+                          : t('online.privateDesc', 'Hidden from Public Rooms • Code required')}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Toggle Button */}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const nextVal = !isRoomPublic;
+                      setIsRoomPublic(nextVal);
+                      await onlineMatchManager.setRoomPublic(nextVal);
+                    }}
+                    className={`relative inline-flex h-8 w-14 shrink-0 cursor-pointer rounded-full border-[2.5px] border-black transition-colors duration-200 ease-in-out focus:outline-none ${
+                      isRoomPublic ? 'bg-emerald-400' : 'bg-slate-300'
+                    }`}
+                    role="switch"
+                    aria-checked={isRoomPublic}
+                    title={isRoomPublic ? 'Switch to Private' : 'Switch to Public'}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white border-2 border-black shadow-xs ring-0 transition duration-200 ease-in-out mt-0.25 ${
+                        isRoomPublic ? 'translate-x-6' : 'translate-x-0.5'
+                      }`}
+                    />
                   </button>
                 </div>
               </div>
@@ -452,6 +512,8 @@ export default function OnlineMatchModal({
                 <span className="font-black text-xs uppercase text-slate-700 tracking-wider">
                   {gameMode === 'king_of_the_hill'
                     ? t('online.waitingKothPlayers', 'Waiting for contenders to enter code...')
+                    : isRoomPublic
+                    ? t('online.waitingPublicOpponent', 'Waiting for players in Public Rooms or code entry...')
                     : t('online.waitingOpponentCode', 'Waiting for opponent to enter code...')}
                 </span>
               </div>
@@ -484,7 +546,7 @@ export default function OnlineMatchModal({
                   </button>
                   <h2 className="text-lg sm:text-xl font-black uppercase tracking-wider text-black flex items-center gap-2">
                     <Radio className="w-5 h-5 text-emerald-600 animate-pulse" />
-                    <span>{t('online.rooms', 'ROOMS')}</span>
+                    <span>{t('online.publicRooms', 'PUBLIC ROOMS')}</span>
                   </h2>
                 </div>
 
@@ -497,7 +559,7 @@ export default function OnlineMatchModal({
                       setIsLoadingPublicRooms(false);
                     }}
                     className="p-1.5 rounded-[10px] bg-slate-100 hover:bg-slate-200 border-2 border-black text-black transition-all cursor-pointer"
-                    title="Refresh Rooms"
+                    title="Refresh Public Rooms"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${isLoadingPublicRooms ? 'animate-spin' : ''}`} />
                   </button>
@@ -522,7 +584,7 @@ export default function OnlineMatchModal({
                   <div className="flex items-center gap-1.5 pb-1">
                     <span className="px-3 py-1 rounded-[10px] text-[10px] font-black uppercase tracking-wider bg-amber-400 text-black border-2 border-black flex items-center gap-1.5 shadow-xs">
                       <Crown className="w-3.5 h-3.5 fill-black text-black" />
-                      <span>KING OF THE HILL ROOMS (4 CONTENDERS)</span>
+                      <span>PUBLIC KING OF THE HILL ROOMS (4 CONTENDERS)</span>
                     </span>
                   </div>
                 ) : (
@@ -538,9 +600,9 @@ export default function OnlineMatchModal({
                         }`}
                       >
                         {filterType === 'all'
-                          ? 'ALL ROOMS'
+                          ? 'ALL PUBLIC ROOMS'
                           : filterType === 'king_of_the_hill'
-                          ? '👑 KING OF THE HILL'
+                          ? '👑 PUBLIC KING OF THE HILL'
                           : '⚽ 1V1 MATCH'}
                       </button>
                     ))}
@@ -561,7 +623,7 @@ export default function OnlineMatchModal({
                 {isLoadingPublicRooms ? (
                   <div className="py-8 flex flex-col items-center justify-center gap-2 text-slate-500">
                     <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
-                    <span className="text-xs font-bold uppercase tracking-wider">Loading active rooms...</span>
+                    <span className="text-xs font-bold uppercase tracking-wider">Loading active public rooms...</span>
                   </div>
                 ) : (() => {
                   const filtered = publicRooms.filter((r) => {
@@ -776,62 +838,6 @@ export default function OnlineMatchModal({
                 >
                   {t('common.cancel', 'CANCEL')}
                 </button>
-              </div>
-            </div>
-          )}
-
-          {/* ============================================================ */}
-          {/* STEP 4: SEARCHING FOR OPPONENT MODAL */}
-          {/* ============================================================ */}
-          {step === 'searching' && (
-            <div className="flex flex-col items-center text-center py-2">
-              {errorMessage && (
-                <div className="w-full p-2.5 mb-3 bg-rose-100 border-[2px] border-rose-500 rounded-[12px] text-rose-700 text-xs font-black flex items-center justify-center gap-1.5">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{errorMessage}</span>
-                </div>
-              )}
-
-              <div className="relative w-24 h-24 flex items-center justify-center mb-3">
-                <div className="absolute inset-0 rounded-full border-2 border-amber-400/50 animate-ping"></div>
-                <div className="absolute inset-2 rounded-full border-2 border-amber-400/70 animate-pulse"></div>
-                <div className="w-14 h-14 rounded-full bg-amber-400/20 border-[2.5px] border-black flex items-center justify-center shadow-inner">
-                  <Radio className="w-7 h-7 text-black animate-spin" />
-                </div>
-              </div>
-
-              <h2 className="text-xl sm:text-2xl font-black uppercase tracking-wider text-black mb-1">
-                {t('online.searchingMatch', 'SEARCHING FOR MATCH')}
-              </h2>
-              <p className="text-slate-600 text-xs font-bold uppercase tracking-wider mb-1">
-                {t('online.lookingOpponent', 'Looking for an online opponent...')} ({searchTimer}s)
-              </p>
-              <p className="text-[11px] text-slate-400 mb-5">
-                {searchTimer >= 15
-                  ? t('online.stillSearching', 'Still searching... You can also create a private room to share with a friend!')
-                  : t('online.pairingAuto', 'Pairing automatically with anyone searching worldwide')}
-              </p>
-
-              <div className="w-full flex flex-col gap-2.5">
-                {errorMessage && (
-                  <motion.button
-                    whileHover={{ y: -2, scale: 1.015 }}
-                    whileTap={{ y: 4, scale: 0.98 }}
-                    onClick={handleStartFindMatch}
-                    className="w-full py-3 rounded-[16px] font-black text-sm uppercase tracking-wider bg-amber-400 text-black border-[3px] border-black shadow-[0_3px_0_0_#000] cursor-pointer"
-                  >
-                    {t('online.retrySearch', 'RETRY SEARCH')}
-                  </motion.button>
-                )}
-
-                <motion.button
-                  whileHover={{ y: -2, scale: 1.015 }}
-                  whileTap={{ y: 4, scale: 0.98 }}
-                  onClick={handleCancelAndBack}
-                  className="w-full py-3.5 rounded-[18px] font-black text-sm uppercase tracking-wider bg-rose-500 text-white border-[3px] border-black shadow-[0_4px_0_0_#000] cursor-pointer"
-                >
-                  {t('online.cancelSearch', 'CANCEL SEARCH')}
-                </motion.button>
               </div>
             </div>
           )}

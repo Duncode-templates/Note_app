@@ -14,12 +14,14 @@ import {
   Sparkles,
   WifiOff,
   User,
+  UserX,
   Crown,
   Zap,
 } from 'lucide-react';
 import { COUNTRIES_DATA, Country, getFlagUrl } from '../data/countries';
 import LazyFlagImage from './LazyFlagImage';
 import { onlineMatchManager } from '../utils/onlineMatchManager';
+import { crazyGamesSDK } from '../utils/crazyGamesSDK';
 import { OnlineMatchRoom } from '../types';
 import { playKickSound } from '../utils/mediaPreloader';
 import { getBotInstinctCountry, getBotProfileById, getBotProfileByUsername, getRandomBotProfile } from '../data/botProfiles';
@@ -177,6 +179,9 @@ export default function OnlineCountrySelectionPage({
       }
     });
 
+    // Hide native invite overlay during country selection
+    crazyGamesSDK.hideInviteButton();
+
     const unsubCountry = onlineMatchManager.on('country_selection_updated', (payload) => {
       if (payload?.room) {
         setRoom({ ...payload.room });
@@ -191,12 +196,17 @@ export default function OnlineCountrySelectionPage({
     });
 
     const unsubMatch = onlineMatchManager.on('match_start', () => {
+      crazyGamesSDK.hideInviteButton();
       launchMatch();
     });
 
     const unsubOppLeft = onlineMatchManager.on('opponent_left', handleDisconnect);
     const unsubOppDisc = onlineMatchManager.on('opponent_disconnected', handleDisconnect);
     const unsubPlayerLeft = onlineMatchManager.on('player_left', handleDisconnect);
+    const unsubKicked = onlineMatchManager.on('player_kicked_from_room', () => {
+      crazyGamesSDK.hideInviteButton();
+      onBack();
+    });
 
     return () => {
       unsubUpdate();
@@ -206,6 +216,8 @@ export default function OnlineCountrySelectionPage({
       unsubOppLeft();
       unsubOppDisc();
       unsubPlayerLeft();
+      unsubKicked();
+      crazyGamesSDK.hideInviteButton();
       if (countdownTimerRef.current) {
         clearInterval(countdownTimerRef.current);
       }
@@ -526,16 +538,35 @@ export default function OnlineCountrySelectionPage({
                 </div>
               </div>
 
-              {/* Status Badge */}
-              {opponentCountry ? (
-                <span className="bg-rose-500 text-white font-black text-[10px] uppercase px-2.5 py-1 rounded-full border-2 border-black flex items-center gap-1 shadow-xs shrink-0">
-                  <ShieldCheck className="w-3 h-3 stroke-[3]" /> {t('online.ready', 'READY')}
-                </span>
-              ) : (
-                <span className="bg-sky-400 text-black font-black text-[10px] uppercase px-2.5 py-1 rounded-full border-2 border-black animate-pulse shrink-0">
-                  {t('online.choosing', 'CHOOSING')}
-                </span>
-              )}
+              {/* Status Badge & Host Kick Button */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                {isHost && room?.guest && (
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => {
+                      if (room.guest?.id) {
+                        onlineMatchManager.kickPlayer(room.guest.id);
+                      }
+                    }}
+                    className="px-2.5 py-1 rounded-[10px] text-[10px] font-black uppercase tracking-wider bg-rose-500 hover:bg-rose-600 text-white border-2 border-black flex items-center gap-1 shadow-xs cursor-pointer transition-colors"
+                    title="Kick opponent from room"
+                  >
+                    <UserX className="w-3 h-3 stroke-[2.5]" />
+                    <span>KICK</span>
+                  </motion.button>
+                )}
+
+                {opponentCountry ? (
+                  <span className="bg-rose-500 text-white font-black text-[10px] uppercase px-2.5 py-1 rounded-full border-2 border-black flex items-center gap-1 shadow-xs shrink-0">
+                    <ShieldCheck className="w-3 h-3 stroke-[3]" /> {t('online.ready', 'READY')}
+                  </span>
+                ) : (
+                  <span className="bg-sky-400 text-black font-black text-[10px] uppercase px-2.5 py-1 rounded-full border-2 border-black animate-pulse shrink-0">
+                    {t('online.choosing', 'CHOOSING')}
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Selected Team Content */}

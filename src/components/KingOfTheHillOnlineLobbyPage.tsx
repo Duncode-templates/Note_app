@@ -11,6 +11,8 @@ import {
   Bot,
   User,
   Globe,
+  Lock,
+  UserX,
   Loader2,
   CheckCircle2,
   AlertCircle,
@@ -199,6 +201,11 @@ export default function KingOfTheHillOnlineLobbyPage({
       }
     });
 
+    const unsubKicked = onlineMatchManager.on('player_kicked_from_room', () => {
+      crazyGamesSDK.hideInviteButton();
+      onLeaveRoom();
+    });
+
     return () => {
       unsubRoom();
       unsubLobby();
@@ -209,6 +216,7 @@ export default function KingOfTheHillOnlineLobbyPage({
       unsubOpponentDisconnected();
       unsubHostTransferred();
       unsubStarted();
+      unsubKicked();
       crazyGamesSDK.hideInviteButton();
     };
   }, [room, onStartOnlineMatch, localPlayerId, t]);
@@ -545,13 +553,60 @@ export default function KingOfTheHillOnlineLobbyPage({
               <span className="text-xs font-black uppercase tracking-wider text-slate-500 mb-0.5">
                 {t('online.roomCodePrompt', 'ROOM CODE • SHARE WITH FRIENDS')}
               </span>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap justify-center md:justify-start">
                 <span className="font-mono font-black text-3xl sm:text-4xl tracking-[0.2em] text-black">
                   #{currentRoom.roomId}
                 </span>
                 <span className="text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-0.5 rounded-full uppercase">
                   {activePlayers.length}/4 {t('common.players', 'PLAYERS')}
                 </span>
+
+                {/* Public / Private Room Status / Toggle */}
+                {isHost ? (
+                  <button
+                    onClick={async () => {
+                      const nextVal = currentRoom.isPublic === false ? true : false;
+                      setCurrentRoom((prev) => ({ ...prev, isPublic: nextVal }));
+                      await onlineMatchManager.setRoomPublic(nextVal);
+                    }}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border-2 border-black cursor-pointer transition-all shadow-2xs ${
+                      currentRoom.isPublic !== false
+                        ? 'bg-emerald-300 hover:bg-emerald-200 text-black'
+                        : 'bg-amber-200 hover:bg-amber-100 text-amber-950'
+                    }`}
+                    title={currentRoom.isPublic !== false ? 'Click to make Private' : 'Click to make Public'}
+                  >
+                    {currentRoom.isPublic !== false ? (
+                      <>
+                        <Globe className="w-3.5 h-3.5 text-emerald-950 stroke-[2.5]" />
+                        <span>PUBLIC ROOM</span>
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="w-3.5 h-3.5 text-amber-950 stroke-[2.5]" />
+                        <span>PRIVATE ROOM</span>
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <span className={`flex items-center gap-1 text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase border ${
+                    currentRoom.isPublic !== false
+                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                      : 'bg-amber-100 text-amber-900 border-amber-300'
+                  }`}>
+                    {currentRoom.isPublic !== false ? (
+                      <>
+                        <Globe className="w-3 h-3 text-emerald-700" />
+                        <span>PUBLIC</span>
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="w-3 h-3 text-amber-700" />
+                        <span>PRIVATE</span>
+                      </>
+                    )}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -635,8 +690,24 @@ export default function KingOfTheHillOnlineLobbyPage({
                     </div>
                   </div>
 
-                  {/* Ready indicator */}
-                  <div className="shrink-0 flex items-center gap-1">
+                  {/* Actions & Status */}
+                  <div className="shrink-0 flex items-center gap-1.5">
+                    {/* Host Kick Button (only visible to host for non-host players) */}
+                    {isHost && !isSlotHost && player.id !== localPlayerId && (
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => {
+                          onlineMatchManager.kickPlayer(player.id);
+                        }}
+                        className="px-2.5 py-1 rounded-[10px] text-[10px] font-black uppercase tracking-wider bg-rose-500 hover:bg-rose-600 text-white border-2 border-black flex items-center gap-1 shadow-xs cursor-pointer transition-colors"
+                        title={`Kick ${player.name || 'player'} from room`}
+                      >
+                        <UserX className="w-3 h-3 stroke-[2.5]" />
+                        <span>KICK</span>
+                      </motion.button>
+                    )}
+
                     <span className="text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-1 rounded-[10px] uppercase flex items-center gap-1">
                       <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                       {t('common.ready', 'READY')}

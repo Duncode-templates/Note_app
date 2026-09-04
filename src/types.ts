@@ -126,6 +126,8 @@ export interface OnlineMatchRoom {
   maxPlayers?: number;
   players?: OnlinePlayer[];
   kothState?: KingOfTheHillMatchState;
+  kickedPlayerIds?: string[];
+  lastKickedPlayerId?: string;
   isBotMatch?: boolean;
   botProfileId?: string;
 }

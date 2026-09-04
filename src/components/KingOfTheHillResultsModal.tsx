@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Crown,
@@ -6,8 +6,6 @@ import {
   Swords,
   RotateCcw,
   Home,
-  Share2,
-  Check,
   Sparkles,
   Flame,
   Target,
@@ -29,6 +27,7 @@ interface KingOfTheHillResultsModalProps {
   matchState: KingOfTheHillMatchState;
   onRematch: () => void;
   onReturnToMenu: () => void;
+  isOnline?: boolean;
 }
 
 export default function KingOfTheHillResultsModal({
@@ -36,9 +35,21 @@ export default function KingOfTheHillResultsModal({
   matchState,
   onRematch,
   onReturnToMenu,
+  isOnline = false,
 }: KingOfTheHillResultsModalProps) {
   const { t } = useTranslation();
-  const [copiedLink, setCopiedLink] = useState(false);
+
+  // Ensure CrazyGames native invite button overlay is hidden while viewing results, and celebrate victory
+  React.useEffect(() => {
+    if (isOpen) {
+      crazyGamesSDK.hideInviteButton();
+      const localContender = matchState.contenders.find((c) => c.isLocalPlayer);
+      const isWinner = localContender && !localContender.isEliminated;
+      if (isWinner) {
+        crazyGamesSDK.happytime();
+      }
+    }
+  }, [isOpen, matchState.contenders]);
 
   if (!isOpen) return null;
 
@@ -66,23 +77,6 @@ export default function KingOfTheHillResultsModal({
   // Most goals across tournament
   const topGoalGetter = [...matchState.contenders].sort((a, b) => b.totalGoals - a.totalGoals)[0];
 
-  const handleCopyInvite = async () => {
-    try {
-      const inviteUrl = await crazyGamesSDK.inviteLink({
-        mode: 'king_of_the_hill',
-        rematch: 'true',
-      });
-      if (inviteUrl) {
-        await navigator.clipboard.writeText(inviteUrl);
-      }
-      setCopiedLink(true);
-      setTimeout(() => setCopiedLink(false), 2500);
-    } catch {
-      setCopiedLink(true);
-      setTimeout(() => setCopiedLink(false), 2500);
-    }
-  };
-
   return (
     <AnimatePresence>
       <motion.div
@@ -90,19 +84,23 @@ export default function KingOfTheHillResultsModal({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.25 }}
-        className="fixed inset-0 z-50 w-full h-full overflow-y-auto overflow-x-hidden bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-amber-600/35 via-slate-950 to-black text-slate-900 select-none font-sans touch-pan-y overscroll-contain"
+        className="fixed inset-0 z-50 w-full h-full overflow-y-auto overflow-x-hidden bg-slate-950 text-slate-900 select-none font-sans touch-pan-y overscroll-contain"
       >
-        {/* Dynamic Arena Turf & Spotlight Accents */}
+        {/* Dynamic Championship Stadium Backdrop & Atmosphere */}
         <div
-          className="absolute inset-0 opacity-[0.09] pointer-events-none bg-[radial-gradient(#f59e0b_1.5px,transparent_1.5px)] [background-size:24px_24px]"
+          className="fixed inset-0 pointer-events-none bg-gradient-to-b from-amber-950/70 via-slate-950 to-black"
           aria-hidden="true"
         />
         <div
-          className="absolute top-0 left-1/3 -translate-x-1/2 w-96 h-96 bg-amber-500/15 rounded-full blur-3xl pointer-events-none"
+          className="fixed inset-0 opacity-[0.14] pointer-events-none bg-[radial-gradient(#f59e0b_1.5px,transparent_1.5px)] [background-size:24px_24px]"
           aria-hidden="true"
         />
         <div
-          className="absolute top-20 right-1/4 translate-x-1/2 w-96 h-96 bg-purple-600/20 rounded-full blur-3xl pointer-events-none"
+          className="fixed top-0 left-1/3 -translate-x-1/2 w-[550px] h-[550px] bg-amber-500/18 rounded-full blur-3xl pointer-events-none"
+          aria-hidden="true"
+        />
+        <div
+          className="fixed top-24 right-1/4 translate-x-1/2 w-[550px] h-[550px] bg-purple-600/18 rounded-full blur-3xl pointer-events-none"
           aria-hidden="true"
         />
 
@@ -557,49 +555,35 @@ export default function KingOfTheHillResultsModal({
         </div>
 
         {/* Fixed Bottom Action Bar */}
-        <div className="fixed bottom-0 left-0 right-0 p-3 sm:p-4 bg-black/90 backdrop-blur-md border-t-[3.5px] border-black z-40 flex items-center justify-center">
+        <div className="fixed bottom-0 left-0 right-0 p-3 sm:p-4 bg-black/95 backdrop-blur-md border-t-[3.5px] border-black z-40 flex items-center justify-center">
           <div className="w-full max-w-2xl flex items-center justify-between gap-2.5 sm:gap-4">
-            {/* Play Again Primary Button */}
-            <motion.button
-              whileHover={{ y: -2, scale: 1.02 }}
-              whileTap={{ y: 3, scale: 0.97 }}
-              onClick={onRematch}
-              className="flex-1 py-3 sm:py-3.5 px-4 rounded-[18px] font-black text-sm sm:text-base uppercase tracking-wider bg-amber-400 hover:bg-amber-300 text-black border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer flex items-center justify-center gap-2 outline-none"
-            >
-              <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
-              <span>{t('koth.playAgain', 'PLAY AGAIN')}</span>
-            </motion.button>
-
-            {/* Share / Invite link */}
-            <motion.button
-              whileHover={{ y: -2, scale: 1.02 }}
-              whileTap={{ y: 3, scale: 0.97 }}
-              onClick={handleCopyInvite}
-              className="py-3 sm:py-3.5 px-3.5 sm:px-4 rounded-[18px] font-black text-xs sm:text-sm uppercase tracking-wider bg-white hover:bg-slate-100 text-black border-[2.5px] border-black shadow-[0_4px_0_0_#000] cursor-pointer flex items-center justify-center gap-1.5 outline-none shrink-0"
-            >
-              {copiedLink ? (
-                <>
-                  <Check className="w-4 h-4 text-emerald-600 stroke-[3]" />
-                  <span className="text-emerald-700">COPIED</span>
-                </>
-              ) : (
-                <>
-                  <Share2 className="w-4 h-4 text-black" />
-                  <span>INVITE</span>
-                </>
-              )}
-            </motion.button>
+            {/* Play Again Primary Button (Offline Only) */}
+            {!isOnline && (
+              <motion.button
+                whileHover={{ y: -2, scale: 1.02 }}
+                whileTap={{ y: 3, scale: 0.97 }}
+                onClick={onRematch}
+                className="flex-1 py-3 sm:py-3.5 px-4 rounded-[18px] font-black text-sm sm:text-base uppercase tracking-wider bg-amber-400 hover:bg-amber-300 text-black border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer flex items-center justify-center gap-2 outline-none"
+              >
+                <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
+                <span>{t('koth.playAgain', 'PLAY AGAIN')}</span>
+              </motion.button>
+            )}
 
             {/* Return to Menu */}
             <motion.button
               whileHover={{ y: -2, scale: 1.02 }}
               whileTap={{ y: 3, scale: 0.97 }}
               onClick={onReturnToMenu}
-              className="py-3 sm:py-3.5 px-3.5 sm:px-4 rounded-[18px] font-black text-xs sm:text-sm uppercase tracking-wider bg-slate-200 hover:bg-slate-300 text-slate-800 border-[2.5px] border-black shadow-[0_4px_0_0_#000] cursor-pointer flex items-center justify-center gap-1.5 outline-none shrink-0"
+              className={`${
+                isOnline
+                  ? 'flex-1 py-3.5 sm:py-4 bg-amber-400 hover:bg-amber-300 text-black text-sm sm:text-base border-[3px] shadow-[0_5px_0_0_#000]'
+                  : 'py-3 sm:py-3.5 px-4 sm:px-6 bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs sm:text-sm border-[2.5px] shadow-[0_4px_0_0_#000]'
+              } rounded-[18px] font-black uppercase tracking-wider border-black cursor-pointer flex items-center justify-center gap-2 outline-none`}
               title="Return to Main Menu"
             >
-              <Home className="w-4 h-4 text-black" />
-              <span className="hidden sm:inline">{t('common.mainMenu', 'MENU')}</span>
+              <Home className={`w-4 h-4 sm:w-5 sm:h-5 ${isOnline ? 'text-black stroke-[2.5]' : 'text-slate-800'}`} />
+              <span>{t('common.mainMenu', 'MAIN MENU')}</span>
             </motion.button>
           </div>
         </div>

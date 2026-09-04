@@ -16,6 +16,7 @@ import LazyFlagImage from './LazyFlagImage';
 import TrophyImage from './TrophyImage';
 import KnockoutBracketView from './KnockoutBracketView';
 import { useTranslation } from '../utils/i18n';
+import { crazyGamesSDK } from '../utils/crazyGamesSDK';
 
 interface TournamentHubPageProps {
   tournamentState: TournamentState;
@@ -67,6 +68,13 @@ export default function TournamentHubPage({
   const [activeTab, setActiveTab] = useState<'bracket' | 'tables' | 'fixtures'>(() => {
     return currentStage === 'group' ? 'tables' : 'bracket';
   });
+
+  // Trigger celebratory CrazyGames happytime when player wins the World Cup
+  React.useEffect(() => {
+    if (isUserChampion) {
+      crazyGamesSDK.happytime();
+    }
+  }, [isUserChampion]);
 
   // User standing in their group
   const userGroupStandings = groups[userGroup] || [];

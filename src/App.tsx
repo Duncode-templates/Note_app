@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Play, ShoppingCart, X, Target, Coins, User, Flame, Zap, Swords, Wifi, Video, Bookmark, Globe, Crown, Rocket, Trophy, Medal } from 'lucide-react';
+import { Play, ShoppingCart, X, Target, Coins, User, Flame, Zap, Swords, Wifi, Video, Bookmark, Globe, Crown, Rocket, Trophy, Medal, AlertCircle } from 'lucide-react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faFutbol, faBullseye, faDumbbell, faFire, faCrosshairs } from '@fortawesome/free-solid-svg-icons';
 import { MenuItemId, GameMode, OnlineMatchRoom, SavedReplay, KingOfTheHillMatchState, KingOfTheHillContender } from './types';
@@ -168,6 +168,33 @@ export default function App() {
   const [opponentCountry, setOpponentCountry] = useState<Country | null>(null);
   const [coins, setCoins] = useState<number>(() => loadInitialCoins());
   const [activeOnlineRoom, setActiveOnlineRoom] = useState<OnlineMatchRoom | null>(null);
+  const [kickedNotification, setKickedNotification] = useState<string | null>(null);
+
+  // Listen for kicked from room event across the application
+  useEffect(() => {
+    const unsubKicked = onlineMatchManager.on('player_kicked_from_room', (payload) => {
+      setActiveOnlineRoom(null);
+      setActiveKingMatchState(null);
+      setCurrentView('menu');
+      setOnlineModalWagerTier(undefined);
+      setIsOnlineModalOpen(true);
+      setKickedNotification(payload?.reason || 'You were kicked from room');
+    });
+
+    return () => {
+      unsubKicked();
+    };
+  }, []);
+
+  // Auto-dismiss top kicked notification after 6 seconds
+  useEffect(() => {
+    if (kickedNotification) {
+      const timer = setTimeout(() => {
+        setKickedNotification(null);
+      }, 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [kickedNotification]);
 
   // Subscribe to Saved Replays updates
   useEffect(() => {
@@ -228,6 +255,21 @@ export default function App() {
           }
           onlineMatchManager.setPlayerInfo(user.username || playerName, undefined, userAvatar);
         }
+
+        // Subscribe to user auth changes if user signs in mid-session
+        crazyGamesSDK.onUserChange((changedUser) => {
+          if (changedUser) {
+            if (changedUser.username) {
+              setPlayerName(changedUser.username);
+            }
+            const avatar = changedUser.profilePictureUrl || changedUser.avatarUrl || null;
+            if (avatar) {
+              setUserProfilePicture(avatar);
+            }
+            onlineMatchManager.setPlayerInfo(changedUser.username || playerName, undefined, avatar);
+          }
+        });
+
         // Async re-check saved tournament state in cloud data
         const cloudTournament = await loadTournamentStateAsync();
         if (cloudTournament) {
@@ -307,9 +349,8 @@ export default function App() {
 
   // CrazyGames Gameplay Start / Stop Lifecycle Compliance & Survival Best Sync
   useEffect(() => {
-    if (currentView === 'stadium') {
-      crazyGamesSDK.gameplayStart();
-    } else {
+    if (currentView !== 'stadium') {
+      // Gameplay is active only inside Stadium3DView once loadingStop() resolves
       crazyGamesSDK.gameplayStop();
       if (currentView === 'menu') {
         setBestSurvivalStreak(loadInitialSurvivalBest());
@@ -875,6 +916,7 @@ export default function App() {
               adStarted: () => {},
               adFinished: () => {
                 updateCoins((prev) => prev + 50);
+                crazyGamesSDK.happytime();
               },
               adError: () => {
                 setIsAdsComingSoonOpen(true);
@@ -1719,6 +1761,32 @@ export default function App() {
         onClose={handleCloseKingOfTheHillRules}
         onContinue={handleContinueKingOfTheHillRules}
       />
+
+      {/* Global Top Banner Notification: Kicked from Room */}
+      <AnimatePresence>
+        {kickedNotification && (
+          <motion.div
+            initial={{ y: -90, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -90, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 500, damping: 28 }}
+            className="fixed top-4 left-1/2 -translate-x-1/2 z-[150] max-w-lg w-[92%] sm:w-auto pointer-events-auto"
+          >
+            <div className="bg-rose-500 text-white font-black text-xs sm:text-sm uppercase tracking-wider px-5 py-3.5 rounded-[20px] border-[3.5px] border-black shadow-[0_6px_0_0_#000] flex items-center justify-between gap-3 sm:gap-4">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <AlertCircle className="w-5 h-5 shrink-0 text-white" />
+                <span className="truncate">{kickedNotification}</span>
+              </div>
+              <button
+                onClick={() => setKickedNotification(null)}
+                className="w-6 h-6 rounded-full bg-black/20 hover:bg-black/40 flex items-center justify-center text-white cursor-pointer shrink-0 transition-colors ml-2"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

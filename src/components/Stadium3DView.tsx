@@ -3060,19 +3060,20 @@ export default function Stadium3DView({
 
     const isAiShooter = currentTurnRef.current === 'ai';
     const isPenaltyScenario = isPenaltyTraining || isPenaltyShootoutRef.current || penaltyShootout.isActive || isPenaltyTrainingRef.current;
+    const isOfflineNerf = !isOnlineMatch;
 
     const flawRoll = Math.random();
     let flawType: GoalkeeperFlawType = 'none';
     let reactionDelay = isPenaltyScenario
-      ? (0.12 + Math.random() * 0.08)
-      : (0.15 + Math.random() * 0.10);
+      ? (0.15 + Math.random() * 0.10)
+      : (isOfflineNerf ? (0.24 + Math.random() * 0.12) : (0.16 + Math.random() * 0.10));
     let misjudgedCurve = false;
-    let flawOffset = (Math.random() - 0.5) * 0.35;
+    let flawOffset = (Math.random() - 0.5) * (isOfflineNerf ? 0.60 : 0.35);
     let gambleSide = Math.random() > 0.5 ? 1 : -1;
 
-    const isAiAtStageCap = isAiShooter && !isOnlineMatch && !isPracticeMode && awayScoreRef.current >= getAiMaxGoalCap();
+    const isAiAtStageCap = isAiShooter && !isOnlineMatch && !isPracticeMode && !isKingOfTheHill && awayScoreRef.current >= getAiMaxGoalCap();
 
-    if (isAiShooter) {
+    if (isAiShooter && !isKingOfTheHill) {
       if (isAiAtStageCap) {
         // AI is at or above goal cap: User's goalkeeper is 100% disciplined with zero flaws
         flawType = 'none';
@@ -3096,11 +3097,28 @@ export default function Stadium3DView({
     } else if (isPenaltyScenario) {
       if (flawRoll < 0.28) {
         flawType = 'wrong_footed_gamble';
-        reactionDelay = 0.10 + Math.random() * 0.06;
-      } else if (flawRoll < 0.45) {
+        reactionDelay = 0.14 + Math.random() * 0.08;
+      } else if (flawRoll < 0.48) {
         flawType = 'premature_jump';
+        reactionDelay = 0.22 + Math.random() * 0.10;
+      } else if (flawRoll < 0.65) {
+        flawType = 'fingertip_spill';
+      } else {
+        flawType = 'none';
+      }
+    } else if (isOfflineNerf) {
+      // Offline Matches (King of the Hill & Quick Play): Goalkeeper nerfed to be beatable by good shots & curves
+      if (flawRoll < 0.26) {
+        flawType = 'wrong_footed_gamble';
         reactionDelay = 0.20 + Math.random() * 0.08;
-      } else if (flawRoll < 0.60) {
+      } else if (flawRoll < 0.50) {
+        flawType = 'deceived_by_curve';
+        misjudgedCurve = true;
+        flawOffset = (Math.random() - 0.5) * 0.65;
+      } else if (flawRoll < 0.68) {
+        flawType = 'premature_jump';
+        reactionDelay = 0.26 + Math.random() * 0.10;
+      } else if (flawRoll < 0.82) {
         flawType = 'fingertip_spill';
       } else {
         flawType = 'none';
@@ -3949,109 +3967,117 @@ export default function Stadium3DView({
   };
 
   const handlePlayAgain = (forcedPosIndex?: number) => {
-    homeScoreRef.current = 0;
-    awayScoreRef.current = 0;
-    setHomeScore(0);
-    setAwayScore(0);
-    setPracticeGoals(0);
-    setPracticeStreak(0);
-    setPracticeBestStreak(0);
-    matchTimeRef.current = 0;
-    setMatchTime(0);
-    setStoppageSeconds(null);
-    stoppageCountdownRef.current = 0;
-    setStoppageCountdown(0);
-    isTimeExpiredRef.current = false;
-    setIsTimeExpired(false);
-    isGameOverRef.current = false;
-    setIsGameOver(false);
-    setShowResultsModal(false);
-    setShowPenaltyAnnouncement(false);
-    setIsOpponentQuitModalOpen(false);
+    const doRestart = () => {
+      homeScoreRef.current = 0;
+      awayScoreRef.current = 0;
+      setHomeScore(0);
+      setAwayScore(0);
+      setPracticeGoals(0);
+      setPracticeStreak(0);
+      setPracticeBestStreak(0);
+      matchTimeRef.current = 0;
+      setMatchTime(0);
+      setStoppageSeconds(null);
+      stoppageCountdownRef.current = 0;
+      setStoppageCountdown(0);
+      isTimeExpiredRef.current = false;
+      setIsTimeExpired(false);
+      isGameOverRef.current = false;
+      setIsGameOver(false);
+      setShowResultsModal(false);
+      setShowPenaltyAnnouncement(false);
+      setIsOpponentQuitModalOpen(false);
 
-    const resetStats = {
-      playerShots: 0,
-      aiShots: 0,
-      playerGoals: 0,
-      aiGoals: 0,
-      playerWoodwork: 0,
-      aiWoodwork: 0,
-    };
-    matchStatsRef.current = resetStats;
-    setMatchStats(resetStats);
+      const resetStats = {
+        playerShots: 0,
+        aiShots: 0,
+        playerGoals: 0,
+        aiGoals: 0,
+        playerWoodwork: 0,
+        aiWoodwork: 0,
+      };
+      matchStatsRef.current = resetStats;
+      setMatchStats(resetStats);
 
-    setPenaltyShootout({
-      isActive: false,
-      homeKicks: [null, null, null, null, null],
-      awayKicks: [null, null, null, null, null],
-      homePenaltiesScore: 0,
-      awayPenaltiesScore: 0,
-      currentKicker: 'player',
-      round: 1,
-      winner: null,
-      statusText: '',
-    });
-    isPenaltyShootoutRef.current = false;
-    aiConsecutiveGoalsRef.current = 0;
+      setPenaltyShootout({
+        isActive: false,
+        homeKicks: [null, null, null, null, null],
+        awayKicks: [null, null, null, null, null],
+        homePenaltiesScore: 0,
+        awayPenaltiesScore: 0,
+        currentKicker: 'player',
+        round: 1,
+        winner: null,
+        statusText: '',
+      });
+      isPenaltyShootoutRef.current = false;
+      aiConsecutiveGoalsRef.current = 0;
 
-    if (isSurvival) {
-      setHostSurvivalLives(3);
-      setGuestSurvivalLives(3);
-      hostSurvivalLivesRef.current = 3;
-      guestSurvivalLivesRef.current = 3;
-      setSurvivalLives(3);
-      survivalLivesRef.current = 3;
-      setAiSurvivalLives(3);
-      aiSurvivalLivesRef.current = 3;
-      setSurvivalStreak(0);
-      survivalStreakRef.current = 0;
-      setSurvivalScore(0);
-      setSurvivalOnlineTime(100);
-      survivalOnlineTimeRef.current = 100;
-    }
+      if (isSurvival) {
+        setHostSurvivalLives(3);
+        setGuestSurvivalLives(3);
+        hostSurvivalLivesRef.current = 3;
+        guestSurvivalLivesRef.current = 3;
+        setSurvivalLives(3);
+        survivalLivesRef.current = 3;
+        setAiSurvivalLives(3);
+        aiSurvivalLivesRef.current = 3;
+        setSurvivalStreak(0);
+        survivalStreakRef.current = 0;
+        setSurvivalScore(0);
+        setSurvivalOnlineTime(100);
+        survivalOnlineTimeRef.current = 100;
+      }
 
-    // Reset shot outcome, flight, replays, and turn advancement flags
-    stopGoalCheerSound();
-    shotOutcomeRef.current = null;
-    isGoalScoredRef.current = false;
-    isAdvancingTurnRef.current = false;
-    hasTriggeredReplayForShotRef.current = false;
-    recordedReplayFramesRef.current = [];
-    activeReplayClipRef.current = [];
-    isReplayActiveRef.current = false;
-    setIsReplayActive(false);
-    localShotFiredThisTurnRef.current = false;
-    crazyGamesSDK.gameplayStart();
+      // Reset shot outcome, flight, replays, and turn advancement flags
+      stopGoalCheerSound();
+      shotOutcomeRef.current = null;
+      isGoalScoredRef.current = false;
+      isAdvancingTurnRef.current = false;
+      hasTriggeredReplayForShotRef.current = false;
+      recordedReplayFramesRef.current = [];
+      activeReplayClipRef.current = [];
+      isReplayActiveRef.current = false;
+      setIsReplayActive(false);
+      localShotFiredThisTurnRef.current = false;
+      crazyGamesSDK.gameplayStart();
 
-    const initTurn = isOnlineMatch ? (isLocalHost ? 'player' : 'ai') : 'player';
-    setCurrentTurn(initTurn);
-    currentTurnRef.current = initTurn;
+      const initTurn = isOnlineMatch ? (isLocalHost ? 'player' : 'ai') : 'player';
+      setCurrentTurn(initTurn);
+      currentTurnRef.current = initTurn;
 
-    if (isOnlineMatch && isLocalHost) {
-      onlineMatchManager.syncMatchTime(isSurvival ? 100 : 0, undefined);
-    }
+      if (isOnlineMatch && isLocalHost) {
+        onlineMatchManager.syncMatchTime(isSurvival ? 100 : 0, undefined);
+      }
 
-    if (forcedPosIndex !== undefined) {
-      const pos = FREE_KICK_POSITIONS[forcedPosIndex];
+      if (forcedPosIndex !== undefined) {
+        const pos = FREE_KICK_POSITIONS[forcedPosIndex];
+        const targetGkStartX = calculateRealisticGoalkeeperStartX(pos.xOffset, false);
+        selectPositionIndex(forcedPosIndex, targetGkStartX);
+        return;
+      }
+
+      // Guaranteed selection of a completely new free kick position different from recent
+      const recentIndex = currentPosIndexRef.current;
+      const candidates = FREE_KICK_POSITIONS.map((_, i) => i).filter((i) => i !== recentIndex);
+      const nextIndex = candidates.length > 0
+        ? candidates[Math.floor(Math.random() * candidates.length)]
+        : (recentIndex + 1) % FREE_KICK_POSITIONS.length;
+      
+      const pos = FREE_KICK_POSITIONS[nextIndex];
       const targetGkStartX = calculateRealisticGoalkeeperStartX(pos.xOffset, false);
-      selectPositionIndex(forcedPosIndex, targetGkStartX);
-      return;
-    }
 
-    // Guaranteed selection of a completely new free kick position different from recent
-    const recentIndex = currentPosIndexRef.current;
-    const candidates = FREE_KICK_POSITIONS.map((_, i) => i).filter((i) => i !== recentIndex);
-    const nextIndex = candidates.length > 0
-      ? candidates[Math.floor(Math.random() * candidates.length)]
-      : (recentIndex + 1) % FREE_KICK_POSITIONS.length;
-    
-    const pos = FREE_KICK_POSITIONS[nextIndex];
-    const targetGkStartX = calculateRealisticGoalkeeperStartX(pos.xOffset, false);
+      if (isOnlineMatch && isLocalHost) {
+        onlineMatchManager.syncPosition(nextIndex, targetGkStartX);
+      }
+      selectPositionIndex(nextIndex, targetGkStartX);
+    };
 
-    if (isOnlineMatch && isLocalHost) {
-      onlineMatchManager.syncPosition(nextIndex, targetGkStartX);
+    if (!isOnlineMatch && !isPracticeMode) {
+      crazyGamesSDK.requestMidgameAd(doRestart);
+    } else {
+      doRestart();
     }
-    selectPositionIndex(nextIndex, targetGkStartX);
   };
 
   // Trigger kicker run-up and 7% ball scale reduction on locking power
@@ -6459,16 +6485,17 @@ export default function Stadium3DView({
 
             // 1. Walk across the goal line towards the ball's predicted X position
             const isAnyPenaltyMatch = isPenaltyTraining || isPenaltyShootoutRef.current || penaltyShootout.isActive || isPenaltyTrainingRef.current;
+            const isOfflineNerf = !isOnlineMatch;
             const deltaX = gkPhys.targetX - gkPhys.pos.x;
             const urgencySpeed = deltaX / Math.max(0.03, tCross);
-            const maxAgilitySpeed = isAnyPenaltyMatch ? 7.6 : 6.8; // Quick athletic agility along the goal line
+            const maxAgilitySpeed = isAnyPenaltyMatch ? 7.6 : (isOfflineNerf ? 4.9 : 6.8); // Balanced athletic agility along the goal line
             const desiredSpeed = THREE.MathUtils.clamp(urgencySpeed, -maxAgilitySpeed, maxAgilitySpeed);
-            gkPhys.walkSpeed = THREE.MathUtils.lerp(gkPhys.walkSpeed, desiredSpeed, Math.min(1.0, dt * (isAnyPenaltyMatch ? 26.0 : 22.0)));
+            gkPhys.walkSpeed = THREE.MathUtils.lerp(gkPhys.walkSpeed, desiredSpeed, Math.min(1.0, dt * (isAnyPenaltyMatch ? 26.0 : (isOfflineNerf ? 13.0 : 22.0))));
             gkPhys.pos.x += gkPhys.walkSpeed * dt;
             gkPhys.pos.x = THREE.MathUtils.clamp(gkPhys.pos.x, -3.75, 3.75);
 
             // 2. Straight-line vertical jump: triggers ONLY if the ball is high and within goal frame
-            const isCloseToBallX = Math.abs(deltaX) < 1.45;
+            const isCloseToBallX = Math.abs(deltaX) < (isOfflineNerf ? 1.15 : 1.45);
             const isHighBall = gkPhys.targetY > 1.25 && gkPhys.targetY <= 2.48;
             const isBallApproachingGoal = bPos.z < -34.5 || tCross < 0.45;
 
@@ -6481,8 +6508,8 @@ export default function Stadium3DView({
               gkPhys.hasJumped = true;
               gkPhys.actionType = 'jump';
               gkPhys.state = 'jumping';
-              // Straight vertical jump with capped height so keeper never exceeds or flies over the crossbar (max jump lift ~0.45m)
-              const jumpLift = Math.min(0.45, Math.max(0.20, (gkPhys.targetY - 1.25) * 0.45));
+              // Straight vertical jump with capped height so keeper never exceeds or flies over the crossbar
+              const jumpLift = Math.min(isOfflineNerf ? 0.35 : 0.45, Math.max(0.18, (gkPhys.targetY - 1.25) * (isOfflineNerf ? 0.35 : 0.45)));
               gkPhys.vel.y = Math.sqrt(2 * 18.0 * jumpLift);
             }
 
@@ -7248,12 +7275,13 @@ export default function Stadium3DView({
 
               const isGroundedFromEarlyJump = gkPhys.jumpCompleted && gkPhys.pos.y === 0;
               const isAiShooter = currentTurnRef.current === 'ai';
-              const isAiAtStageCap = isAiShooter && !isOnlineMatch && !isPracticeMode && awayScoreRef.current >= getAiMaxGoalCap();
+              const isOfflineNerf = !isOnlineMatch;
+              const isAiAtStageCap = isAiShooter && !isOnlineMatch && !isPracticeMode && !isKingOfTheHill && awayScoreRef.current >= getAiMaxGoalCap();
 
               // Physical reach envelope based on dynamic action type (ground reach vs jumping dive catch)
-              let reachRadiusX = isGroundedFromEarlyJump ? 0.55 : 1.35;
+              let reachRadiusX = isGroundedFromEarlyJump ? 0.45 : (isOfflineNerf ? 1.08 : 1.35);
               let minReachY = 0.0;
-              let maxReachY = isGroundedFromEarlyJump ? 1.65 : 2.45;
+              let maxReachY = isGroundedFromEarlyJump ? 1.55 : (isOfflineNerf ? 2.38 : 2.45);
 
               if (isAiAtStageCap) {
                 // If AI is at or above goal cap (e.g. 3 goals in quick play), goalkeeper covers the full goal area
@@ -7261,9 +7289,9 @@ export default function Stadium3DView({
                 minReachY = 0.0;
                 maxReachY = 2.85;
               } else if (gkPhys.hasJumped || gkPhys.actionType === 'jump') {
-                reachRadiusX = 1.65; // Extended mid-air diving wingspan
+                reachRadiusX = isOfflineNerf ? 1.28 : 1.65; // Extended mid-air diving wingspan
                 minReachY = Math.max(0, gkY - 0.15);
-                maxReachY = Math.min(2.55, gkY + 2.10);
+                maxReachY = Math.min(isOfflineNerf ? 2.40 : 2.55, gkY + (isOfflineNerf ? 1.85 : 2.10));
               }
 
               // Ball is within keeper's physical reach
@@ -7276,14 +7304,15 @@ export default function Stadium3DView({
                 const impactSpeed = ballVelRef.current.length();
                 const absCurve = Math.abs(currentCurveRef.current || 0);
                 const absCurveMag = Math.abs(curveAccelMagRef.current || 0);
-                const hasSignificantCurve = absCurve > 3.5 || absCurveMag > 4.0;
+                const hasSignificantCurve = absCurve > 3.0 || absCurveMag > 3.5;
 
                 // On high curve / bend or high speed shots, the ball is harder to hold
-                const isFingertipEdge = Math.abs(dx) > reachRadiusX * 0.68 || ballY > maxReachY - 0.25 || (hasSignificantCurve && Math.abs(dx) > reachRadiusX * 0.45);
+                const isFingertipEdge = Math.abs(dx) > reachRadiusX * (isOfflineNerf ? 0.55 : 0.68) || ballY > maxReachY - (isOfflineNerf ? 0.35 : 0.25) || (hasSignificantCurve && Math.abs(dx) > reachRadiusX * 0.40);
                 const isSpill = !isAiAtStageCap && (
-                  (gkPhys.flawType === 'fingertip_spill' && Math.random() < 0.75) ||
-                  (hasSignificantCurve && isFingertipEdge && Math.random() < 0.50) ||
-                  (impactSpeed > 22.0 && isFingertipEdge && Math.random() < 0.40)
+                  (gkPhys.flawType === 'fingertip_spill' && Math.random() < 0.85) ||
+                  (hasSignificantCurve && isFingertipEdge && Math.random() < (isOfflineNerf ? 0.65 : 0.50)) ||
+                  (impactSpeed > (isOfflineNerf ? 19.0 : 22.0) && isFingertipEdge && Math.random() < (isOfflineNerf ? 0.58 : 0.40)) ||
+                  (isOfflineNerf && Math.abs(dx) > reachRadiusX * 0.80 && Math.random() < 0.45)
                 );
 
                 if (isSpill) {
@@ -7295,11 +7324,11 @@ export default function Stadium3DView({
                   // Check if ball is caught cleanly vs parried away
                   // Only allow Clean Catch on slow, straight, central shots directly into keeper's torso (never on curve balls)
                   const isCleanCatch = !hasSignificantCurve &&
-                    absCurve < 3.5 &&
-                    Math.abs(dx) <= 0.38 &&
+                    absCurve < 2.8 &&
+                    Math.abs(dx) <= (isOfflineNerf ? 0.26 : 0.38) &&
                     ballY >= (gkY + 0.55) &&
                     ballY <= (gkY + 1.65) &&
-                    impactSpeed <= 17.5 &&
+                    impactSpeed <= (isOfflineNerf ? 15.0 : 17.5) &&
                     !isFingertipEdge;
 
                   if (isCleanCatch) {
@@ -8404,15 +8433,17 @@ export default function Stadium3DView({
           resetToDefaultState();
         }}
         onPlayAgain={() => {
-          setShowSurvivalGameOver(false);
-          setSurvivalLives(3);
-          survivalLivesRef.current = 3;
-          setSurvivalStreak(0);
-          survivalStreakRef.current = 0;
-          setSurvivalScore(0);
-          setHasUsedSurvivalRevive(false);
-          setSuperpowerCharge(0);
-          resetToDefaultState();
+          crazyGamesSDK.requestMidgameAd(() => {
+            setShowSurvivalGameOver(false);
+            setSurvivalLives(3);
+            survivalLivesRef.current = 3;
+            setSurvivalStreak(0);
+            survivalStreakRef.current = 0;
+            setSurvivalScore(0);
+            setHasUsedSurvivalRevive(false);
+            setSuperpowerCharge(0);
+            resetToDefaultState();
+          });
         }}
         onExit={onBack}
         canRevive={!hasUsedSurvivalRevive}

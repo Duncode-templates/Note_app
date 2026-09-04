@@ -298,6 +298,20 @@ class OnlineMatchManager {
           return;
         }
 
+        // Check if local player was kicked from room
+        const isKicked = (
+          roomData.lastKickedPlayerId === this.localPlayerId ||
+          (Array.isArray(roomData.kickedPlayerIds) && roomData.kickedPlayerIds.includes(this.localPlayerId))
+        );
+        if (isKicked) {
+          this.cleanupLocalLeaving();
+          this.emit('player_kicked_from_room', {
+            roomId: roomData.roomId || roomId,
+            reason: 'You were kicked from room',
+          });
+          return;
+        }
+
         const isHost = this.localPlayerId === roomData.host?.id;
 
         // Preserve active in-memory timer progression across snapshot triggers
@@ -350,10 +364,12 @@ class OnlineMatchManager {
           countdownStartTime: roomData.countdownStartTime ?? null,
           rematchRequestedBy: roomData.rematchRequestedBy ?? null,
           isOpponentDisconnected: Boolean(roomData.isOpponentDisconnected || roomData.status === 'opponent_left' || roomData.status === 'cancelled'),
-          isPublic: roomData.isPublic ?? true,
+          isPublic: roomData.isPublic !== false,
           maxPlayers: roomData.maxPlayers || (roomData.gameMode === 'king_of_the_hill' ? 4 : 2),
           players: Array.isArray(roomData.players) ? roomData.players : (roomData.guest ? [roomData.host, roomData.guest] : [roomData.host]),
           kothState: roomData.kothState || null,
+          kickedPlayerIds: Array.isArray(roomData.kickedPlayerIds) ? roomData.kickedPlayerIds : [],
+          lastKickedPlayerId: roomData.lastKickedPlayerId || undefined,
         };
 
         const prevRoom = this.currentRoom;
@@ -681,6 +697,25 @@ class OnlineMatchManager {
         });
 
         this.emit('player_joined', { player: this.currentRoom.guest, room: this.currentRoom });
+      }
+    } else if (event === 'player_kicked') {
+      if (payload?.kickedPlayerId === this.localPlayerId) {
+        this.cleanupLocalLeaving();
+        this.emit('player_kicked_from_room', {
+          roomId: payload.roomId || this.currentRoom?.roomId,
+          reason: 'You were kicked from room',
+        });
+      } else if (this.currentRoom) {
+        if (this.currentRoom.guest?.id === payload?.kickedPlayerId) {
+          this.currentRoom.guest = null;
+        }
+        if (Array.isArray(this.currentRoom.players)) {
+          this.currentRoom.players = this.currentRoom.players.filter((p) => p.id !== payload?.kickedPlayerId);
+        }
+        this.emit('room_updated', { room: this.currentRoom });
+        if (this.currentRoom.gameMode === 'king_of_the_hill') {
+          this.emit('koth_lobby_updated', { players: this.currentRoom.players, room: this.currentRoom });
+        }
       }
     } else if (event === 'country_selected') {
       if (this.currentRoom) {
@@ -1550,6 +1585,7 @@ class OnlineMatchManager {
         // Room must be in waiting or selecting_country state
         if (d.status !== 'waiting' && d.status !== 'selecting_country' && d.status !== 'ready') return;
         if (d.isOpponentDisconnected) return;
+        if (d.isPublic === false) return; // Exclude private rooms
 
         // Filter by gameMode if requested
         if (gameModeFilter && d.gameMode !== gameModeFilter) return;
@@ -1626,6 +1662,7 @@ class OnlineMatchManager {
           if (age > 45000) return;
           if (d.status !== 'waiting' && d.status !== 'selecting_country' && d.status !== 'ready') return;
           if (d.isOpponentDisconnected) return;
+          if (d.isPublic === false) return; // Exclude private rooms
           if (gameModeFilter && d.gameMode !== gameModeFilter) return;
           if (d.gameMode !== 'king_of_the_hill' && d.guest) return;
 
@@ -1689,7 +1726,8 @@ class OnlineMatchManager {
     preSelectedCountryCode?: string | null,
     wagerTier?: 'rookie' | 'pro' | 'champion' | 'legend',
     entryFee?: number,
-    prizePot?: number
+    prizePot?: number,
+    isPublic: boolean = true
   ): Promise<string> {
     const roomId = (customCode || this.generateRoomCode()).toUpperCase();
     const initialPosIndex = Math.floor(Math.random() * 30);
@@ -1726,9 +1764,10 @@ class OnlineMatchManager {
       countdown: null,
       countdownStartTime: null,
       isMatchmaking,
-      isPublic: true,
+      isPublic: Boolean(isPublic),
       maxPlayers,
       players: initialPlayers,
+      kickedPlayerIds: [],
     };
     (this.currentRoom as any).createdAt = createdAt;
 
@@ -1746,9 +1785,10 @@ class OnlineMatchManager {
         entryFee: entryFee ?? null,
         prizePot: prizePot ?? null,
         isMatchmaking,
-        isPublic: true,
+        isPublic: Boolean(isPublic),
         maxPlayers,
         players: initialPlayers,
+        kickedPlayerIds: [],
         currentKickerRole: 'host',
         score: { host: 0, guest: 0 },
         survivalLives: gameMode === 'survival' ? { host: 3, guest: 3 } : null,
@@ -1806,6 +1846,11 @@ class OnlineMatchManager {
 
       if (data.status === 'opponent_left') {
         this.emit('error', { message: `Room #${code} has already ended.` });
+        return false;
+      }
+
+      if (Array.isArray(data.kickedPlayerIds) && data.kickedPlayerIds.includes(this.localPlayerId)) {
+        this.emit('error', { message: 'You were kicked from this room and cannot rejoin.' });
         return false;
       }
 
@@ -2568,6 +2613,81 @@ class OnlineMatchManager {
 
       this.currentRoom.status = 'opponent_left';
       this.currentRoom.isOpponentDisconnected = true;
+    }
+  }
+
+  /**
+   * Sets room visibility to public or private in Firestore and in-memory
+   */
+  public async setRoomPublic(isPublic: boolean): Promise<void> {
+    if (!this.currentRoom) return;
+    this.currentRoom.isPublic = isPublic;
+    try {
+      await this.updateFirestoreRoom({ isPublic: Boolean(isPublic), updatedAt: Date.now() });
+    } catch (e) {
+      console.warn('Failed to update room public visibility:', e);
+    }
+    this.emit('room_updated', { room: this.currentRoom });
+  }
+
+  /**
+   * Kicks a player from the active room (only permitted by room leader / host)
+   */
+  public async kickPlayer(targetPlayerId: string): Promise<boolean> {
+    if (!this.currentRoom) return false;
+    const isHost = this.localPlayerId === this.currentRoom.host?.id || this.currentRoom.host?.isLocal;
+    if (!isHost) {
+      console.warn('Only the room leader can kick players.');
+      return false;
+    }
+    if (targetPlayerId === this.localPlayerId) {
+      console.warn('Room leader cannot kick themselves.');
+      return false;
+    }
+
+    try {
+      const prevPlayers = Array.isArray(this.currentRoom.players) ? this.currentRoom.players : [];
+      const updatedPlayers = prevPlayers.filter((p) => p.id !== targetPlayerId);
+      const prevKicked = Array.isArray(this.currentRoom.kickedPlayerIds)
+        ? this.currentRoom.kickedPlayerIds
+        : [];
+      const updatedKicked = Array.from(new Set([...prevKicked, targetPlayerId]));
+
+      const isKickingGuest = this.currentRoom.guest?.id === targetPlayerId;
+
+      // Update in-memory
+      this.currentRoom.players = updatedPlayers;
+      if (isKickingGuest) {
+        this.currentRoom.guest = null;
+      }
+      this.currentRoom.lastKickedPlayerId = targetPlayerId;
+      this.currentRoom.kickedPlayerIds = updatedKicked;
+
+      // Update Firestore
+      const updatePayload: Record<string, any> = {
+        players: updatedPlayers,
+        lastKickedPlayerId: targetPlayerId,
+        kickedPlayerIds: updatedKicked,
+        lastKickedAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      if (isKickingGuest) {
+        updatePayload.guest = null;
+      }
+
+      await this.updateFirestoreRoom(updatePayload);
+
+      // Broadcast to peers
+      this.send('player_kicked', { kickedPlayerId: targetPlayerId, roomId: this.currentRoom.roomId });
+      this.emit('player_kicked', { kickedPlayerId: targetPlayerId, room: this.currentRoom });
+      this.emit('room_updated', { room: this.currentRoom });
+      if (this.currentRoom.gameMode === 'king_of_the_hill') {
+        this.emit('koth_lobby_updated', { players: updatedPlayers, room: this.currentRoom });
+      }
+      return true;
+    } catch (err) {
+      console.error('Error kicking player:', err);
+      return false;
     }
   }
 
