@@ -67,6 +67,7 @@ export interface OnlinePlayer {
   profilePictureUrl?: string | null;
   isBot?: boolean;
   botProfileId?: string;
+  lastSeen?: number;
 }
 
 export interface TargetSmashTarget {

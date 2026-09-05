@@ -20,6 +20,7 @@ import {
   where,
   getDocs,
   limit,
+  orderBy,
   runTransaction,
   Unsubscribe
 } from 'firebase/firestore';
@@ -228,18 +229,35 @@ class OnlineMatchManager {
         this.stopHeartbeat();
         return;
       }
-      // During active gameplay, avoid spamming Firestore every 3 seconds to preserve bandwidth and eliminate frame jitter
-      if (this.currentRoom.status === 'playing') {
-        const now = Date.now();
-        if (now - this.lastHeartbeatTime < 20000) {
-          return;
+      const now = Date.now();
+
+      // 1. Sync locally across browser tabs and localStorage with ZERO Firestore reads/writes
+      try {
+        if (typeof localStorage !== 'undefined' && this.currentRoom) {
+          localStorage.setItem(`fk_room_${roomId}`, JSON.stringify(this.currentRoom));
+          const allRaw = localStorage.getItem('fk_all_active_rooms');
+          const allMap = allRaw ? JSON.parse(allRaw) : {};
+          allMap[roomId] = { room: this.currentRoom, updatedAt: now };
+          localStorage.setItem('fk_all_active_rooms', JSON.stringify(allMap));
+
+          if (this.currentRoom.isPublic) {
+            const raw = localStorage.getItem('fk_active_public_rooms');
+            const map = raw ? JSON.parse(raw) : {};
+            map[roomId] = { ...this.currentRoom, updatedAt: now };
+            localStorage.setItem('fk_active_public_rooms', JSON.stringify(map));
+          }
         }
-        this.lastHeartbeatTime = now;
+      } catch {}
+
+      // 2. Throttle Firestore writes: only write every 25 seconds to preserve quota
+      if (now - this.lastHeartbeatTime < 25000) {
+        return;
       }
+      this.lastHeartbeatTime = now;
+
       try {
         const roomRef = doc(db, 'rooms', roomId);
         if (this.currentRoom?.gameMode === 'king_of_the_hill' && Array.isArray(this.currentRoom?.players)) {
-          const now = Date.now();
           const updatedPlayers = this.currentRoom.players.map((p) =>
             p.id === this.localPlayerId ? { ...p, lastSeen: now } : p
           );
@@ -250,11 +268,11 @@ class OnlineMatchManager {
           });
         } else {
           await updateDoc(roomRef, {
-            updatedAt: Date.now(),
+            updatedAt: now,
           });
         }
       } catch {}
-    }, 3000);
+    }, 4000);
   }
 
   private stopHeartbeat() {
@@ -272,31 +290,53 @@ class OnlineMatchManager {
 
     try {
       const roomRef = doc(db, 'rooms', roomId);
-      this.firestoreUnsub = onSnapshot(roomRef, (snapshot) => {
-        if (!snapshot.exists()) {
-          this.emit('room_not_found', { roomId, message: 'This match room no longer exists.' });
-          if (this.currentRoom) {
-            this.currentRoom.status = 'opponent_left';
-            this.currentRoom.isOpponentDisconnected = true;
-            this.emit('opponent_disconnected', { message: 'Room has been closed or does not exist.' });
-            this.emit('opponent_left', { message: 'Room has been closed or does not exist.' });
-          }
-          return;
-        }
+      this.firestoreUnsub = onSnapshot(
+        roomRef,
+        (snapshot: any) => {
+          if (!snapshot.exists()) {
+            // CRITICAL: If the local player is the host of this active room, NEVER self-destruct or emit room_not_found!
+            const isLocalHost = Boolean(
+              this.currentRoom &&
+              this.currentRoom.roomId === roomId &&
+              this.currentRoom.host?.id === this.localPlayerId
+            );
+            if (isLocalHost) {
+              return;
+            }
 
-        const roomData = snapshot.data() as any;
-        if (!roomData) return;
+            // If snapshot is still resolving from offline cache, wait for server confirmation
+            if (snapshot.metadata?.fromCache) {
+              return;
+            }
 
-        if (roomData.status === 'cancelled' || roomData.status === 'deleted') {
-          this.emit('room_not_found', { roomId, message: 'This match was cancelled or closed.' });
-          this.emit('room_cancelled', { roomId });
-          if (this.currentRoom) {
-            this.currentRoom.status = 'cancelled';
-            this.currentRoom.isOpponentDisconnected = true;
-            this.emit('opponent_disconnected', { message: 'This match was cancelled by the host.' });
+            // Only emit room_not_found if this is an external guest joining or if room was previously verified
+            this.emit('room_not_found', { roomId, message: 'This match room no longer exists.' });
+            if (this.currentRoom) {
+              this.currentRoom.status = 'opponent_left';
+              this.currentRoom.isOpponentDisconnected = true;
+              this.emit('opponent_disconnected', { message: 'Room has been closed or does not exist.' });
+              this.emit('opponent_left', { message: 'Room has been closed or does not exist.' });
+            }
+            return;
           }
-          return;
-        }
+
+          const roomData = snapshot.data() as any;
+          if (!roomData) return;
+
+          if (roomData.status === 'cancelled' || roomData.status === 'deleted') {
+            // If the local player is host and has not cancelled, do not cancel on stale/corrupt status
+            if (this.localPlayerId === roomData.host?.id && this.currentRoom?.status !== 'cancelled') {
+              return;
+            }
+            this.emit('room_not_found', { roomId, message: 'This match was cancelled or closed.' });
+            this.emit('room_cancelled', { roomId });
+            if (this.currentRoom) {
+              this.currentRoom.status = 'cancelled';
+              this.currentRoom.isOpponentDisconnected = true;
+              this.emit('opponent_disconnected', { message: 'This match was cancelled by the host.' });
+            }
+            return;
+          }
 
         // Check if local player was kicked from room
         const isKicked = (
@@ -551,6 +591,9 @@ class OnlineMatchManager {
             }
           }
         }
+      },
+      (err) => {
+        console.warn('Firestore room onSnapshot notice (quota or network):', err);
       });
     } catch (err) {
       console.warn('Firestore subscription error:', err);
@@ -654,49 +697,181 @@ class OnlineMatchManager {
 
     const { event, payload } = data;
 
+    if (event === 'query_room') {
+      if (this.currentRoom && this.currentRoom.roomId === payload?.roomId) {
+        if (this.broadcastChannel) {
+          try {
+            this.broadcastChannel.postMessage({
+              event: 'room_probe_ack',
+              payload: { roomId: this.currentRoom.roomId, room: this.currentRoom },
+              senderId: this.localPlayerId,
+            });
+          } catch {}
+        }
+      }
+      return;
+    }
+
+    if (event === 'room_probe_ack') {
+      if (payload?.roomId && payload?.room) {
+        this.emit('room_probe_ack', payload);
+      }
+      return;
+    }
+
+    if (event === 'query_public_rooms') {
+      if (
+        this.currentRoom &&
+        this.currentRoom.isPublic !== false &&
+        (this.currentRoom.status === 'waiting' || this.currentRoom.status === 'selecting_country' || this.currentRoom.status === 'ready')
+      ) {
+        if (this.broadcastChannel) {
+          try {
+            this.broadcastChannel.postMessage({
+              event: 'public_room_probe_ack',
+              payload: { room: this.currentRoom },
+              senderId: this.localPlayerId,
+            });
+          } catch {}
+        }
+      }
+      return;
+    }
+
+    if (event === 'public_room_probe_ack') {
+      if (payload?.room && payload.room.roomId) {
+        this.emit('public_room_probe_ack', payload);
+        try {
+          if (typeof localStorage !== 'undefined') {
+            const raw = localStorage.getItem('fk_active_public_rooms');
+            const map = raw ? JSON.parse(raw) : {};
+            map[payload.room.roomId] = { ...payload.room, updatedAt: Date.now() };
+            localStorage.setItem('fk_active_public_rooms', JSON.stringify(map));
+          }
+        } catch {}
+      }
+      return;
+    }
+
+    if (event === 'room_joined') {
+      if (this.currentRoom && this.currentRoom.roomId === payload?.roomId && payload?.room) {
+        if (!this.currentRoom.host.isLocal) {
+          this.currentRoom = {
+            ...this.currentRoom,
+            ...payload.room,
+            guest: this.currentRoom.guest, // preserve our local guest object
+          };
+          this.emit('room_updated', { room: this.currentRoom });
+          if (this.currentRoom.gameMode === 'king_of_the_hill') {
+            this.emit('koth_lobby_updated', { players: this.currentRoom.players, room: this.currentRoom });
+          }
+        }
+      }
+      return;
+    }
+
+    if (event === 'room_updated_broadcast') {
+      if (this.currentRoom && this.currentRoom.roomId === payload?.roomId && payload?.room) {
+        if (this.currentRoom.host?.id !== this.localPlayerId) {
+          this.currentRoom = {
+            ...this.currentRoom,
+            ...payload.room,
+          };
+          this.emit('room_updated', { room: this.currentRoom });
+          if (this.currentRoom.gameMode === 'king_of_the_hill') {
+            this.emit('koth_lobby_updated', { players: this.currentRoom.players, room: this.currentRoom });
+          }
+        }
+      }
+      return;
+    }
+
     if (event === 'join_room') {
       if (this.currentRoom && this.currentRoom.host.isLocal) {
+        const isKoth = this.currentRoom.gameMode === 'king_of_the_hill';
+        const nextStatus = isKoth ? 'waiting' : 'selecting_country';
         const guestCountry = payload.country || null;
-        const nextStatus = 'selecting_country';
+        const guestId = data.senderId || payload.playerId || 'guest';
+        const guestName = payload.playerName || 'Guest Player';
+        const guestProfilePic = payload.profilePictureUrl || null;
 
-        this.currentRoom.guest = {
-          id: data.senderId || payload.playerId || 'guest',
-          name: payload.playerName || 'Guest Player',
+        const newPlayer: OnlinePlayer = {
+          id: guestId,
+          name: guestName,
           countryCode: guestCountry,
           role: 'guest',
           isReady: Boolean(guestCountry),
           isLocal: false,
-          profilePictureUrl: payload.profilePictureUrl || null,
+          profilePictureUrl: guestProfilePic,
         };
-        this.currentRoom.status = nextStatus;
 
-        // Update Firestore
+        if (isKoth) {
+          const currentPlayers = Array.isArray(this.currentRoom.players) ? [...this.currentRoom.players] : [this.currentRoom.host];
+          if (!currentPlayers.some((p) => p.id === guestId) && currentPlayers.length < 4) {
+            currentPlayers.push(newPlayer);
+          }
+          this.currentRoom.players = currentPlayers;
+          this.currentRoom.guest = newPlayer;
+        } else {
+          this.currentRoom.guest = newPlayer;
+          this.currentRoom.status = nextStatus;
+        }
+
+        const roomPlayers = this.currentRoom.players || (this.currentRoom.guest ? [this.currentRoom.host, this.currentRoom.guest] : [this.currentRoom.host]);
+        const now = Date.now();
+
+        // Update local storage so any new tab/check finds the updated room immediately
+        try {
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(`fk_room_${this.currentRoom.roomId}`, JSON.stringify(this.currentRoom));
+            const allRaw = localStorage.getItem('fk_all_active_rooms');
+            const allMap = allRaw ? JSON.parse(allRaw) : {};
+            allMap[this.currentRoom.roomId] = { room: this.currentRoom, updatedAt: now };
+            localStorage.setItem('fk_all_active_rooms', JSON.stringify(allMap));
+
+            if (this.currentRoom.isPublic) {
+              const raw = localStorage.getItem('fk_active_public_rooms');
+              const map = raw ? JSON.parse(raw) : {};
+              map[this.currentRoom.roomId] = { ...this.currentRoom, updatedAt: now };
+              localStorage.setItem('fk_active_public_rooms', JSON.stringify(map));
+            }
+          }
+        } catch {}
+
+        // Update Firestore (non-blocking)
         this.updateFirestoreRoom({
-          guest: {
-            id: this.currentRoom.guest.id,
-            name: this.currentRoom.guest.name,
-            countryCode: this.currentRoom.guest.countryCode,
-            isReady: Boolean(guestCountry),
-            profilePictureUrl: payload.profilePictureUrl || null,
-          },
-          status: nextStatus,
-          updatedAt: Date.now(),
+          guest: this.currentRoom.guest,
+          players: roomPlayers,
+          status: this.currentRoom.status,
+          updatedAt: now,
         });
 
-        // Notify over socket/peer
+        // Notify over socket/peer/broadcast
         this.send('room_joined', {
           roomId: this.currentRoom.roomId,
           role: 'guest',
           gameMode: this.currentRoom.gameMode,
-          status: nextStatus,
+          status: this.currentRoom.status,
           positionIndex: this.currentRoom.positionIndex ?? 0,
-          players: [
-            { id: this.currentRoom.host.id, name: this.currentRoom.host.name, country: this.currentRoom.host.countryCode, role: 'host' },
-            { id: this.currentRoom.guest.id, name: this.currentRoom.guest.name, country: this.currentRoom.guest.countryCode, role: 'guest' },
-          ],
+          players: roomPlayers,
+          room: this.currentRoom,
         });
 
-        this.emit('player_joined', { player: this.currentRoom.guest, room: this.currentRoom });
+        if (this.broadcastChannel) {
+          try {
+            this.broadcastChannel.postMessage({
+              event: 'room_updated_broadcast',
+              payload: { roomId: this.currentRoom.roomId, room: this.currentRoom },
+              senderId: this.localPlayerId,
+            });
+          } catch {}
+        }
+
+        this.emit('player_joined', { player: newPlayer, room: this.currentRoom });
+        this.emit('room_updated', { room: this.currentRoom });
+        if (isKoth) {
+          this.emit('koth_lobby_updated', { players: this.currentRoom.players, room: this.currentRoom });
+        }
       }
     } else if (event === 'player_kicked') {
       if (payload?.kickedPlayerId === this.localPlayerId) {
@@ -904,6 +1079,8 @@ class OnlineMatchManager {
         this.currentRoom.players = payload.players;
       }
       this.emit('koth_lobby_updated', payload);
+    } else if (event === 'koth_match_starting') {
+      this.emit('koth_match_starting', payload);
     } else if (event === 'koth_match_started') {
       if (this.currentRoom) {
         this.currentRoom.status = 'playing';
@@ -943,8 +1120,30 @@ class OnlineMatchManager {
 
   private async updateFirestoreRoom(partialData: Record<string, any>) {
     if (!this.currentRoom?.roomId) return;
+    const roomId = this.currentRoom.roomId;
+
+    // Instantly sync to localStorage and BroadcastChannel for 0-latency multi-tab persistence
     try {
-      const roomRef = doc(db, 'rooms', this.currentRoom.roomId);
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(`fk_room_${roomId}`, JSON.stringify(this.currentRoom));
+        if (this.currentRoom.isPublic) {
+          const raw = localStorage.getItem('fk_active_public_rooms');
+          const map = raw ? JSON.parse(raw) : {};
+          map[roomId] = { ...this.currentRoom, updatedAt: Date.now() };
+          localStorage.setItem('fk_active_public_rooms', JSON.stringify(map));
+        }
+      }
+      if (this.broadcastChannel) {
+        this.broadcastChannel.postMessage({
+          event: 'room_updated_broadcast',
+          payload: { roomId, room: this.currentRoom, partialData },
+          senderId: this.localPlayerId,
+        });
+      }
+    } catch {}
+
+    try {
+      const roomRef = doc(db, 'rooms', roomId);
       await updateDoc(roomRef, partialData);
     } catch (err) {
       console.warn('Firestore update warning:', err);
@@ -1015,6 +1214,16 @@ class OnlineMatchManager {
         }
 
         if (data.host?.id !== this.localPlayerId) {
+          // Strict game mode and wager tier space isolation
+          if (data.gameMode && data.gameMode !== gameMode) {
+            return;
+          }
+          if (!wagerTier && data.wagerTier) {
+            return;
+          }
+          if (wagerTier && data.wagerTier !== wagerTier) {
+            return;
+          }
           candidates.push({ ...data, roomId: roomDocId });
         }
       });
@@ -1558,118 +1767,121 @@ class OnlineMatchManager {
   }
 
   /**
-   * Fetch open public rooms with active players
+   * Synchronously returns cached public rooms from memory and localStorage in 0ms
    */
-  public async getPublicRooms(gameModeFilter?: string): Promise<OnlineMatchRoom[]> {
+  public getCachedPublicRooms(gameModeFilter?: string): OnlineMatchRoom[] {
+    const roomsMap = new Map<string, OnlineMatchRoom>();
+    const now = Date.now();
+
+    // 1. Current active room if local player is host and room is public
+    if (
+      this.currentRoom &&
+      this.currentRoom.isPublic &&
+      this.currentRoom.gameMode === 'king_of_the_hill' &&
+      (this.currentRoom.status === 'waiting' || this.currentRoom.status === 'selecting_country' || this.currentRoom.status === 'ready')
+    ) {
+      roomsMap.set(this.currentRoom.roomId, this.currentRoom);
+    }
+
+    // 2. Active public rooms from localStorage (strictly King of the Hill)
     try {
-      const roomsCol = collection(db, 'rooms');
-      const q = query(roomsCol, limit(30));
-      const snap = await getDocs(q);
-      const rooms: OnlineMatchRoom[] = [];
-      const now = Date.now();
-
-      snap.forEach((docSnap) => {
-        const d = docSnap.data();
-        if (!d) return;
-        const roomId = d.roomId || docSnap.id;
-        const age = now - (d.updatedAt || d.createdAt || 0);
-
-        // Discard stale rooms older than 45 seconds without heartbeat
-        if (age > 45000) {
-          if (age > 90000) {
-            deleteDoc(doc(db, 'rooms', roomId)).catch(() => {});
-          }
-          return;
+      if (typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem('fk_active_public_rooms');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          Object.values(parsed).forEach((lr: any) => {
+            if (!lr || !lr.roomId) return;
+            // Only King of the Hill rooms can ever be public
+            if (lr.gameMode !== 'king_of_the_hill') return;
+            const age = now - (lr.updatedAt || lr.createdAt || 0);
+            if (age > 240000) return; // 4 minutes
+            if (lr.isPublic === false) return;
+            if (lr.status !== 'waiting' && lr.status !== 'selecting_country' && lr.status !== 'ready') return;
+            const currentCount = Array.isArray(lr.players) ? lr.players.length : (lr.guest ? 2 : 1);
+            if (currentCount >= 4) return;
+            if (!roomsMap.has(lr.roomId)) {
+              roomsMap.set(lr.roomId, lr);
+            }
+          });
         }
 
-        // Room must be in waiting or selecting_country state
-        if (d.status !== 'waiting' && d.status !== 'selecting_country' && d.status !== 'ready') return;
-        if (d.isOpponentDisconnected) return;
-        if (d.isPublic === false) return; // Exclude private rooms
+        const rawAll = localStorage.getItem('fk_all_active_rooms');
+        if (rawAll) {
+          const parsedAll = JSON.parse(rawAll);
+          Object.values(parsedAll).forEach((entry: any) => {
+            const lr = entry?.room || entry;
+            if (!lr || !lr.roomId) return;
+            // Only King of the Hill rooms can ever be public
+            if (lr.gameMode !== 'king_of_the_hill') return;
+            const age = now - (lr.updatedAt || lr.createdAt || 0);
+            if (age > 240000) return;
+            if (lr.isPublic === false) return;
+            if (lr.status !== 'waiting' && lr.status !== 'selecting_country' && lr.status !== 'ready') return;
+            const currentCount = Array.isArray(lr.players) ? lr.players.length : (lr.guest ? 2 : 1);
+            if (currentCount >= 4) return;
+            if (!roomsMap.has(lr.roomId)) {
+              roomsMap.set(lr.roomId, lr);
+            }
+          });
+        }
+      }
+    } catch {}
 
-        // Filter by gameMode if requested
-        if (gameModeFilter && d.gameMode !== gameModeFilter) return;
-
-        // In 1v1, if guest already exists, room is occupied
-        if (d.gameMode !== 'king_of_the_hill' && d.guest) return;
-
-        // In KOTH, max 4 players
-        const currentCount = Array.isArray(d.players) ? d.players.length : (d.guest ? 2 : 1);
-        if (d.gameMode === 'king_of_the_hill' && currentCount >= 4) return;
-
-        rooms.push({
-          roomId,
-          host: {
-            id: d.host?.id || 'host',
-            name: d.host?.name || 'Host',
-            countryCode: d.host?.countryCode || null,
-            role: 'host',
-            isReady: Boolean(d.host?.isReady),
-            isLocal: d.host?.id === this.localPlayerId,
-            profilePictureUrl: d.host?.profilePictureUrl || null,
-          },
-          guest: d.guest ? {
-            id: d.guest.id,
-            name: d.guest.name,
-            countryCode: d.guest.countryCode || null,
-            role: 'guest',
-            isReady: Boolean(d.guest.isReady),
-            isLocal: d.guest.id === this.localPlayerId,
-            profilePictureUrl: d.guest.profilePictureUrl || null,
-          } : null,
-          gameMode: d.gameMode || 'match',
-          status: d.status,
-          currentKickerRole: d.currentKickerRole || 'host',
-          score: d.score || { host: 0, guest: 0 },
-          turn: d.turn || 1,
-          isPublic: d.isPublic ?? true,
-          maxPlayers: d.maxPlayers || (d.gameMode === 'king_of_the_hill' ? 4 : 2),
-          players: Array.isArray(d.players) ? d.players : (d.guest ? [d.host, d.guest] : [d.host]),
-          wagerTier: d.wagerTier,
-          entryFee: d.entryFee,
-          prizePot: d.prizePot,
-          division: d.division,
-          kothState: d.kothState,
-        });
-      });
-
-      // Sort newest first
-      rooms.sort((a, b) => ((b as any).createdAt || 0) - ((a as any).createdAt || 0));
-      return rooms;
-    } catch (err) {
-      console.warn('Failed to fetch public rooms:', err);
-      return [];
-    }
+    const list = Array.from(roomsMap.values());
+    list.sort((a, b) => ((b as any).updatedAt || (b as any).createdAt || 0) - ((a as any).updatedAt || (a as any).createdAt || 0));
+    return list;
   }
 
   /**
-   * Realtime subscription to open public rooms
+   * Fetch open public rooms with fast 2-second timeout and instant local fallback
    */
-  public subscribePublicRooms(callback: (rooms: OnlineMatchRoom[]) => void, gameModeFilter?: string): () => void {
+  public async getPublicRooms(gameModeFilter?: string): Promise<OnlineMatchRoom[]> {
+    const cachedRooms = this.getCachedPublicRooms(gameModeFilter);
+    const roomsMap = new Map<string, OnlineMatchRoom>();
+    cachedRooms.forEach((r) => roomsMap.set(r.roomId, r));
+
     try {
       const roomsCol = collection(db, 'rooms');
-      const q = query(roomsCol, limit(30));
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const rooms: OnlineMatchRoom[] = [];
-        const now = Date.now();
+      const now = Date.now();
 
-        snapshot.forEach((docSnap) => {
+      // Query Firestore with strict 2-second timeout so public rooms modal never hangs
+      const fetchPromise = (async () => {
+        try {
+          const q = query(roomsCol, orderBy('updatedAt', 'desc'), limit(50));
+          return await getDocs(q);
+        } catch {
+          const fallbackQ = query(roomsCol, limit(50));
+          return await getDocs(fallbackQ);
+        }
+      })();
+
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000));
+      const snap: any = await Promise.race([fetchPromise, timeoutPromise]);
+
+      if (snap && typeof snap.forEach === 'function') {
+        snap.forEach((docSnap: any) => {
           const d = docSnap.data();
           if (!d) return;
           const roomId = d.roomId || docSnap.id;
           const age = now - (d.updatedAt || d.createdAt || 0);
 
-          if (age > 45000) return;
+          if (age > 120000) {
+            if (age > 300000) {
+              deleteDoc(doc(db, 'rooms', roomId)).catch(() => {});
+            }
+            return;
+          }
+
           if (d.status !== 'waiting' && d.status !== 'selecting_country' && d.status !== 'ready') return;
           if (d.isOpponentDisconnected) return;
-          if (d.isPublic === false) return; // Exclude private rooms
-          if (gameModeFilter && d.gameMode !== gameModeFilter) return;
-          if (d.gameMode !== 'king_of_the_hill' && d.guest) return;
+          if (d.isPublic === false) return;
+          // Only King of the Hill has public rooms
+          if (d.gameMode !== 'king_of_the_hill') return;
 
-          const currentCount = Array.isArray(d.players) ? d.players.length : (d.guest ? 2 : 1);
-          if (d.gameMode === 'king_of_the_hill' && currentCount >= 4) return;
+          const currentCount = Array.isArray(d.players) ? d.players.length : 1;
+          if (currentCount >= 4) return;
 
-          rooms.push({
+          roomsMap.set(roomId, {
             roomId,
             host: {
               id: d.host?.id || 'host',
@@ -1704,16 +1916,160 @@ class OnlineMatchManager {
             kothState: d.kothState,
           });
         });
+      }
+    } catch (err: any) {
+      console.warn('getPublicRooms notice (using cached list):', err?.message || err);
+    }
 
-        rooms.sort((a, b) => ((b as any).createdAt || 0) - ((a as any).createdAt || 0));
+    const rooms = Array.from(roomsMap.values());
+    rooms.sort((a, b) => ((b as any).updatedAt || (b as any).createdAt || 0) - ((a as any).updatedAt || (a as any).createdAt || 0));
+    return rooms;
+  }
+
+  /**
+   * Realtime subscription to open public rooms with instant cache delivery and zero hanging
+   */
+  public subscribePublicRooms(callback: (rooms: OnlineMatchRoom[]) => void, gameModeFilter?: string): () => void {
+    // 1. Immediately dispatch known cached rooms so UI loads in 0ms!
+    try {
+      callback(this.getCachedPublicRooms(gameModeFilter));
+    } catch {}
+
+    try {
+      const roomsCol = collection(db, 'rooms');
+
+      const processSnapshot = (snapshot: any) => {
+        const roomsMap = new Map<string, OnlineMatchRoom>();
+        const now = Date.now();
+
+        // Populate from cache first
+        this.getCachedPublicRooms(gameModeFilter).forEach((r) => roomsMap.set(r.roomId, r));
+
+        if (snapshot && typeof snapshot.forEach === 'function') {
+          snapshot.forEach((docSnap: any) => {
+            const d = docSnap.data();
+            if (!d) return;
+            const roomId = d.roomId || docSnap.id;
+            const age = now - (d.updatedAt || d.createdAt || 0);
+
+            if (age > 120000) return;
+            if (d.status !== 'waiting' && d.status !== 'selecting_country' && d.status !== 'ready') return;
+            if (d.isOpponentDisconnected) return;
+            if (d.isPublic === false) return;
+            // Only King of the Hill has public rooms
+            if (d.gameMode !== 'king_of_the_hill') return;
+
+            const currentCount = Array.isArray(d.players) ? d.players.length : 1;
+            if (currentCount >= 4) return;
+
+            roomsMap.set(roomId, {
+              roomId,
+              host: {
+                id: d.host?.id || 'host',
+                name: d.host?.name || 'Host',
+                countryCode: d.host?.countryCode || null,
+                role: 'host',
+                isReady: Boolean(d.host?.isReady),
+                isLocal: d.host?.id === this.localPlayerId,
+                profilePictureUrl: d.host?.profilePictureUrl || null,
+              },
+              guest: d.guest ? {
+                id: d.guest.id,
+                name: d.guest.name,
+                countryCode: d.guest.countryCode || null,
+                role: 'guest',
+                isReady: Boolean(d.guest.isReady),
+                isLocal: d.guest.id === this.localPlayerId,
+                profilePictureUrl: d.guest.profilePictureUrl || null,
+              } : null,
+              gameMode: d.gameMode || 'match',
+              status: d.status,
+              currentKickerRole: d.currentKickerRole || 'host',
+              score: d.score || { host: 0, guest: 0 },
+              turn: d.turn || 1,
+              isPublic: d.isPublic ?? true,
+              maxPlayers: d.maxPlayers || (d.gameMode === 'king_of_the_hill' ? 4 : 2),
+              players: Array.isArray(d.players) ? d.players : (d.guest ? [d.host, d.guest] : [d.host]),
+              wagerTier: d.wagerTier,
+              entryFee: d.entryFee,
+              prizePot: d.prizePot,
+              division: d.division,
+              kothState: d.kothState,
+            });
+          });
+        }
+
+        const rooms = Array.from(roomsMap.values());
+        rooms.sort((a, b) => ((b as any).updatedAt || (b as any).createdAt || 0) - ((a as any).updatedAt || (a as any).createdAt || 0));
         callback(rooms);
-      }, (err) => {
-        console.warn('Public rooms subscription warning:', err);
-      });
+      };
 
-      return unsubscribe;
+      let unsubscribe: Unsubscribe | null = null;
+      try {
+        const q = query(roomsCol, orderBy('updatedAt', 'desc'), limit(50));
+        unsubscribe = onSnapshot(
+          q,
+          processSnapshot,
+          (err) => {
+            console.warn('Public rooms subscription notice with orderBy, trying fallback:', err);
+            try {
+              const fallbackQ = query(roomsCol, limit(50));
+              unsubscribe = onSnapshot(fallbackQ, processSnapshot, (err2) => {
+                console.warn('Public rooms subscription fallback notice:', err2);
+                callback(this.getCachedPublicRooms(gameModeFilter));
+              });
+            } catch {
+              callback(this.getCachedPublicRooms(gameModeFilter));
+            }
+          }
+        );
+      } catch (e) {
+        console.warn('Error creating orderBy query, using fallback:', e);
+        try {
+          const fallbackQ = query(roomsCol, limit(50));
+          unsubscribe = onSnapshot(fallbackQ, processSnapshot, () => {
+            callback(this.getCachedPublicRooms(gameModeFilter));
+          });
+        } catch {
+          callback(this.getCachedPublicRooms(gameModeFilter));
+        }
+      }
+
+      // Safety timeout: ensure callback has executed and loading state clears
+      const safetyTimer = setTimeout(() => {
+        callback(this.getCachedPublicRooms(gameModeFilter));
+      }, 800);
+
+      // Listen to broadcastChannel for instant multi-tab room updates
+      let bcListener: ((event: MessageEvent) => void) | null = null;
+      if (this.broadcastChannel) {
+        bcListener = (ev: MessageEvent) => {
+          if (
+            ev.data?.event === 'public_room_created' ||
+            ev.data?.event === 'room_created' ||
+            ev.data?.event === 'public_rooms_updated' ||
+            ev.data?.event === 'room_updated_broadcast'
+          ) {
+            callback(this.getCachedPublicRooms(gameModeFilter));
+          }
+        };
+        this.broadcastChannel.addEventListener('message', bcListener);
+      }
+
+      return () => {
+        clearTimeout(safetyTimer);
+        if (unsubscribe) {
+          try { unsubscribe(); } catch {}
+        }
+        if (this.broadcastChannel && bcListener) {
+          try {
+            this.broadcastChannel.removeEventListener('message', bcListener);
+          } catch {}
+        }
+      };
     } catch (e) {
       console.warn('Error subscribing to public rooms:', e);
+      callback(this.getCachedPublicRooms(gameModeFilter));
       return () => {};
     }
   }
@@ -1727,8 +2083,9 @@ class OnlineMatchManager {
     wagerTier?: 'rookie' | 'pro' | 'champion' | 'legend',
     entryFee?: number,
     prizePot?: number,
-    isPublic: boolean = true
+    isPublic?: boolean
   ): Promise<string> {
+    const resolvedIsPublic = isPublic !== undefined ? isPublic : (gameMode === 'king_of_the_hill');
     const roomId = (customCode || this.generateRoomCode()).toUpperCase();
     const initialPosIndex = Math.floor(Math.random() * 30);
     const createdAt = Date.now();
@@ -1741,7 +2098,7 @@ class OnlineMatchManager {
       role: 'host',
       isReady: Boolean(preSelectedCountryCode),
       isLocal: true,
-      profilePictureUrl: this.localPlayerProfilePictureUrl,
+      profilePictureUrl: this.localPlayerProfilePictureUrl || null,
     };
 
     const initialPlayers: OnlinePlayer[] = [hostPlayer];
@@ -1764,17 +2121,17 @@ class OnlineMatchManager {
       countdown: null,
       countdownStartTime: null,
       isMatchmaking,
-      isPublic: Boolean(isPublic),
+      isPublic: Boolean(resolvedIsPublic),
       maxPlayers,
       players: initialPlayers,
       kickedPlayerIds: [],
     };
     (this.currentRoom as any).createdAt = createdAt;
 
-    // 1. Initialize Firestore room doc
+    // 1. Initialize Firestore room doc and await write with timeout so opponents find it immediately
     try {
       const roomRef = doc(db, 'rooms', roomId);
-      await setDoc(roomRef, {
+      const firestorePayload = {
         roomId,
         createdAt,
         updatedAt: createdAt,
@@ -1784,10 +2141,18 @@ class OnlineMatchManager {
         wagerTier: wagerTier ?? null,
         entryFee: entryFee ?? null,
         prizePot: prizePot ?? null,
-        isMatchmaking,
-        isPublic: Boolean(isPublic),
+        isMatchmaking: Boolean(isMatchmaking),
+        isPublic: Boolean(resolvedIsPublic),
         maxPlayers,
-        players: initialPlayers,
+        players: [{
+          id: hostPlayer.id,
+          name: hostPlayer.name,
+          countryCode: hostPlayer.countryCode || null,
+          role: hostPlayer.role,
+          isReady: Boolean(hostPlayer.isReady),
+          isLocal: false,
+          profilePictureUrl: hostPlayer.profilePictureUrl || null,
+        }],
         kickedPlayerIds: [],
         currentKickerRole: 'host',
         score: { host: 0, guest: 0 },
@@ -1801,13 +2166,40 @@ class OnlineMatchManager {
           name: this.localPlayerName,
           countryCode: preSelectedCountryCode || null,
           isReady: Boolean(preSelectedCountryCode),
-          profilePictureUrl: this.localPlayerProfilePictureUrl,
+          profilePictureUrl: this.localPlayerProfilePictureUrl || null,
         },
         guest: null,
-      });
+      };
+
+      await Promise.race([
+        setDoc(roomRef, firestorePayload),
+        new Promise((resolve) => setTimeout(resolve, 3500)),
+      ]);
     } catch (e: any) {
       console.warn('Firestore create error, falling back to P2P/local:', e);
     }
+
+    // Cache created room locally so checks and local browser tabs find it immediately
+    try {
+      if (typeof sessionStorage !== 'undefined' && this.currentRoom) {
+        sessionStorage.setItem(`fk_room_${roomId}`, JSON.stringify(this.currentRoom));
+      }
+      if (typeof localStorage !== 'undefined' && this.currentRoom) {
+        localStorage.setItem(`fk_room_${roomId}`, JSON.stringify(this.currentRoom));
+
+        const allRaw = localStorage.getItem('fk_all_active_rooms');
+        const allMap = allRaw ? JSON.parse(allRaw) : {};
+        allMap[roomId] = { room: this.currentRoom, updatedAt: createdAt };
+        localStorage.setItem('fk_all_active_rooms', JSON.stringify(allMap));
+
+        if (this.currentRoom.isPublic) {
+          const raw = localStorage.getItem('fk_active_public_rooms');
+          const map = raw ? JSON.parse(raw) : {};
+          map[roomId] = { ...this.currentRoom, updatedAt: createdAt };
+          localStorage.setItem('fk_active_public_rooms', JSON.stringify(map));
+        }
+      }
+    } catch {}
 
     // 2. Start Firestore snapshot listener & heartbeat
     this.listenToFirestoreRoom(roomId);
@@ -1816,67 +2208,272 @@ class OnlineMatchManager {
     // 3. Initialize WebRTC P2P
     this.initPeerHost(roomId);
 
+    // 4. Notify BroadcastChannel for local/multi-tab discovery
+    if (this.broadcastChannel) {
+      try {
+        this.broadcastChannel.postMessage({
+          event: 'room_created',
+          payload: { roomId, room: this.currentRoom },
+          senderId: this.localPlayerId,
+        });
+        if (this.currentRoom?.isPublic) {
+          this.broadcastChannel.postMessage({
+            event: 'public_room_created',
+            payload: { roomId, room: this.currentRoom },
+            senderId: this.localPlayerId,
+          });
+        }
+      } catch {}
+    }
+
     this.emit('room_created', { roomId, room: this.currentRoom });
     return roomId;
   }
 
-  public async joinRoom(roomIdInput: string): Promise<boolean> {
+  /**
+   * Fast BroadcastChannel probe across open browser tabs/windows
+   */
+  private probeRoomOverBroadcast(roomId: string, timeoutMs: number = 300): Promise<any> {
+    if (!this.broadcastChannel) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      let resolved = false;
+      const handler = (data: any) => {
+        if (data?.roomId === roomId && data?.room) {
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timer);
+            this.off('room_probe_ack', handler);
+            resolve(data.room);
+          }
+        }
+      };
+
+      const timer = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          this.off('room_probe_ack', handler);
+          resolve(null);
+        }
+      }, timeoutMs);
+
+      this.on('room_probe_ack', handler);
+
+      try {
+        this.broadcastChannel.postMessage({
+          event: 'query_room',
+          payload: { roomId },
+          senderId: this.localPlayerId,
+        });
+      } catch {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timer);
+          this.off('room_probe_ack', handler);
+          resolve(null);
+        }
+      }
+    });
+  }
+
+  public formatGameModeName(mode?: string): string {
+    switch (mode) {
+      case 'survival':
+        return 'Survival';
+      case 'king_of_the_hill':
+        return 'King of the Hill';
+      case 'division_match':
+        return 'Division Match';
+      case 'penalty_training':
+        return 'Penalty Training';
+      case 'match':
+      default:
+        return 'Quick Match';
+    }
+  }
+
+  public async joinRoom(
+    roomIdInput: string,
+    expectedGameMode?: 'match' | 'penalty_training' | 'survival' | 'division_match' | 'king_of_the_hill',
+    expectedWagerTier?: 'rookie' | 'pro' | 'champion' | 'legend'
+  ): Promise<boolean> {
     const code = roomIdInput.trim().toUpperCase();
     if (!code || code.length < 4) {
       this.emit('error', { message: 'Please enter a valid 5-digit room code.' });
       return false;
     }
 
-    // 1. Fetch Firestore room data
+    // 0. If local player is already actively in this room, do not overwrite or error
+    if (this.currentRoom && this.currentRoom.roomId === code) {
+      if (expectedGameMode && this.currentRoom.gameMode && this.currentRoom.gameMode !== expectedGameMode) {
+        const expName = this.formatGameModeName(expectedGameMode);
+        const actName = this.formatGameModeName(this.currentRoom.gameMode);
+        this.emit('error', {
+          message: `Room #${code} was not found in ${expName}. (This room was created in ${actName} — please switch to ${actName} to join).`,
+        });
+        return false;
+      }
+      const isHost = this.currentRoom.host?.id === this.localPlayerId || Boolean(this.currentRoom.host?.isLocal);
+      this.emit('room_joined', { roomId: code, role: isHost ? 'host' : 'guest', room: this.currentRoom });
+      return true;
+    }
+
+    // 1. Fetch Firestore room data with robust timeout or local fallbacks
+    let data: any = null;
+    const roomRef = doc(db, 'rooms', code);
+
     try {
-      const roomRef = doc(db, 'rooms', code);
-      const snap = await getDoc(roomRef);
-
-      if (!snap.exists()) {
-        this.emit('error', { message: `Room #${code} was not found. Please verify the code.` });
-        return false;
+      const snapPromise = getDoc(roomRef);
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 7000));
+      const snap: any = await Promise.race([snapPromise, timeoutPromise]);
+      if (snap?.exists()) {
+        data = snap.data();
       }
-
-      const data = snap.data() as any;
-
-      if (data.status === 'cancelled') {
-        this.emit('error', { message: `Room #${code} has been cancelled by the host.` });
-        return false;
-      }
-
-      if (data.status === 'opponent_left') {
-        this.emit('error', { message: `Room #${code} has already ended.` });
-        return false;
-      }
-
-      if (Array.isArray(data.kickedPlayerIds) && data.kickedPlayerIds.includes(this.localPlayerId)) {
-        this.emit('error', { message: 'You were kicked from this room and cannot rejoin.' });
-        return false;
-      }
-
-      const isKoth = data.gameMode === 'king_of_the_hill';
-      const existingPlayers: any[] = Array.isArray(data.players)
-        ? data.players
-        : (data.guest ? [data.host, data.guest] : [data.host]);
-      const isAlreadyInRoom = existingPlayers.some((p: any) => p.id === this.localPlayerId);
-
-      if (isKoth) {
-        if (!isAlreadyInRoom && existingPlayers.length >= 4) {
-          const fullMsg = `King of the Hill Room #${code} is full (4/4 players max). Maximum 4 players allowed.`;
-          this.emit('error', { message: fullMsg });
-          this.emit('room_full', { roomId: code, message: fullMsg });
-          return false;
+    } catch (fetchErr) {
+      console.warn('Firestore room fetch notice (quota, offline or timeout):', fetchErr);
+      try {
+        const directSnap = await getDoc(roomRef);
+        if (directSnap?.exists()) {
+          data = directSnap.data();
         }
-      } else {
-        if (data.status !== 'waiting' && data.guest && data.guest.id !== this.localPlayerId) {
-          const fullMsg = `Room #${code} is full or a match is already in progress.`;
-          this.emit('error', { message: fullMsg });
-          this.emit('room_full', { roomId: code, message: fullMsg });
-          return false;
-        }
-      }
+      } catch {}
+    }
 
-      const guestPlayer: OnlinePlayer = {
+    // Fallback 1: LocalStorage single room key
+    if (!data && typeof localStorage !== 'undefined') {
+      try {
+        const cached = localStorage.getItem(`fk_room_${code}`);
+        if (cached) data = JSON.parse(cached);
+      } catch {}
+    }
+
+    // Fallback 2: LocalStorage all active rooms map
+    if (!data && typeof localStorage !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('fk_all_active_rooms');
+        if (raw) {
+          const map = JSON.parse(raw);
+          if (map && map[code]) data = map[code]?.room || map[code];
+        }
+      } catch {}
+    }
+
+    // Fallback 3: LocalStorage active public rooms map
+    if (!data && typeof localStorage !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('fk_active_public_rooms');
+        if (raw) {
+          const map = JSON.parse(raw);
+          if (map && map[code]) data = map[code];
+        }
+      } catch {}
+    }
+
+    // Fallback 4: SessionStorage
+    if (!data && typeof sessionStorage !== 'undefined') {
+      try {
+        const cached = sessionStorage.getItem(`fk_room_${code}`);
+        if (cached) data = JSON.parse(cached);
+      } catch {}
+    }
+
+    // Fallback 5: Multi-tab BroadcastChannel probe across open browser windows
+    if (!data && this.broadcastChannel) {
+      data = await this.probeRoomOverBroadcast(code, 350);
+    }
+
+    if (!data) {
+      const modeLabel = expectedGameMode ? ` in ${this.formatGameModeName(expectedGameMode)}` : '';
+      this.emit('error', { message: `Room #${code} was not found${modeLabel}. Please verify the 5-digit code or ensure the host is online.` });
+      return false;
+    }
+
+    // Strict Game Mode Space Isolation
+    const actualGameMode = data.gameMode || 'match';
+    if (expectedGameMode && actualGameMode !== expectedGameMode) {
+      const expName = this.formatGameModeName(expectedGameMode);
+      const actName = this.formatGameModeName(actualGameMode);
+      this.emit('error', {
+        message: `Room #${code} was not found in ${expName}. (This room was created in ${actName} — please switch to ${actName} to join).`,
+      });
+      return false;
+    }
+
+    // Strict Wager Tier Space Isolation
+    if (expectedWagerTier && data.wagerTier !== expectedWagerTier) {
+      const expTier = `${expectedWagerTier.toUpperCase()} Arena`;
+      const actTier = data.wagerTier ? `${data.wagerTier.toUpperCase()} Arena` : 'Free Quick Match';
+      this.emit('error', {
+        message: `Room #${code} was not found in ${expTier}. (This room was created in ${actTier}).`,
+      });
+      return false;
+    }
+    if (!expectedWagerTier && data.wagerTier && (expectedGameMode === 'match' || !expectedGameMode)) {
+      const actTier = `${data.wagerTier.toUpperCase()} Arena`;
+      this.emit('error', {
+        message: `Room #${code} was created in ${actTier}. Please join from the Wager Arena menu.`,
+      });
+      return false;
+    }
+
+    if (data.status === 'cancelled') {
+      this.emit('error', { message: `Room #${code} has been cancelled by the host.` });
+      return false;
+    }
+
+    if (data.status === 'opponent_left') {
+      this.emit('error', { message: `Room #${code} has already ended.` });
+      return false;
+    }
+
+    if (Array.isArray(data.kickedPlayerIds) && data.kickedPlayerIds.includes(this.localPlayerId)) {
+      this.emit('error', { message: 'You were kicked from this room and cannot rejoin.' });
+      return false;
+    }
+
+    const isKoth = data.gameMode === 'king_of_the_hill';
+    const existingPlayers: any[] = Array.isArray(data.players) && data.players.length > 0
+      ? data.players
+      : (data.guest ? [data.host, data.guest] : [data.host]);
+    const isHost = data.host?.id === this.localPlayerId;
+    const isAlreadyInRoom = isHost || existingPlayers.some((p: any) => p.id === this.localPlayerId);
+    const maxPlayers = data.maxPlayers || (isKoth ? 4 : 2);
+
+    if (!isAlreadyInRoom && existingPlayers.length >= maxPlayers) {
+      const fullMsg = isKoth
+        ? `King of the Hill Room #${code} is full (${maxPlayers}/${maxPlayers} players max).`
+        : `Room #${code} is full or a match is already in progress.`;
+      this.emit('error', { message: fullMsg });
+      this.emit('room_full', { roomId: code, message: fullMsg });
+      return false;
+    }
+
+    let hostPlayer: OnlinePlayer;
+    let guestPlayer: OnlinePlayer | null = null;
+    let updatedPlayers: OnlinePlayer[];
+
+    if (isHost) {
+      hostPlayer = {
+        id: data.host.id,
+        name: data.host.name,
+        countryCode: data.host.countryCode || null,
+        role: 'host',
+        isReady: data.host.isReady || false,
+        isLocal: true,
+        profilePictureUrl: data.host.profilePictureUrl || this.localPlayerProfilePictureUrl,
+      };
+      guestPlayer = data.guest ? { ...data.guest, isLocal: false } : null;
+      updatedPlayers = existingPlayers.map((p) => p.id === this.localPlayerId ? { ...p, isLocal: true } : { ...p, isLocal: false });
+    } else {
+      hostPlayer = {
+        id: data.host.id,
+        name: data.host.name,
+        countryCode: data.host.countryCode || null,
+        role: 'host',
+        isReady: data.host.isReady || false,
+        isLocal: false,
+        profilePictureUrl: data.host.profilePictureUrl || null,
+      };
+      guestPlayer = {
         id: this.localPlayerId,
         name: this.localPlayerName,
         countryCode: null,
@@ -1885,83 +2482,120 @@ class OnlineMatchManager {
         isLocal: true,
         profilePictureUrl: this.localPlayerProfilePictureUrl,
       };
-
-      const updatedPlayers = isAlreadyInRoom
-        ? existingPlayers
+      updatedPlayers = isAlreadyInRoom
+        ? existingPlayers.map((p) => p.id === this.localPlayerId ? { ...p, isLocal: true } : { ...p, isLocal: false })
         : [
-            ...existingPlayers,
-            {
-              id: guestPlayer.id,
-              name: guestPlayer.name,
-              countryCode: null,
-              role: 'guest',
-              isReady: false,
-              profilePictureUrl: guestPlayer.profilePictureUrl,
-            },
+            ...existingPlayers.map((p) => ({ ...p, isLocal: false })),
+            guestPlayer,
           ];
+    }
 
-      const nextStatus = isKoth ? 'waiting' : 'selecting_country';
+    const nextStatus = isKoth ? (data.status || 'waiting') : 'selecting_country';
+    const now = Date.now();
 
-      await updateDoc(roomRef, {
+    this.currentRoom = {
+      roomId: code,
+      host: hostPlayer,
+      guest: guestPlayer,
+      gameMode: data.gameMode || (isKoth ? 'king_of_the_hill' : 'match'),
+      division: data.division ?? undefined,
+      wagerTier: data.wagerTier ?? undefined,
+      entryFee: data.entryFee ?? undefined,
+      prizePot: data.prizePot ?? undefined,
+      survivalLives: data.survivalLives || ((data.gameMode || '') === 'survival' ? { host: 3, guest: 3 } : undefined),
+      status: nextStatus,
+      currentKickerRole: data.currentKickerRole || 'host',
+      score: data.score || { host: 0, guest: 0 },
+      turn: data.turn || 1,
+      positionIndex: data.positionIndex ?? 0,
+      countdown: data.countdown ?? null,
+      countdownStartTime: data.countdownStartTime ?? null,
+      isMatchmaking: Boolean(data.isMatchmaking),
+      isPublic: data.isPublic ?? true,
+      maxPlayers,
+      players: updatedPlayers,
+      kothState: data.kothState,
+    };
+
+    // Update local storage
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(`fk_room_${code}`, JSON.stringify(this.currentRoom));
+        const allRaw = localStorage.getItem('fk_all_active_rooms');
+        const allMap = allRaw ? JSON.parse(allRaw) : {};
+        allMap[code] = { room: this.currentRoom, updatedAt: now };
+        localStorage.setItem('fk_all_active_rooms', JSON.stringify(allMap));
+
+        if (this.currentRoom.isPublic) {
+          const raw = localStorage.getItem('fk_active_public_rooms');
+          const map = raw ? JSON.parse(raw) : {};
+          map[code] = { ...this.currentRoom, updatedAt: now };
+          localStorage.setItem('fk_active_public_rooms', JSON.stringify(map));
+        }
+      }
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem(`fk_room_${code}`, JSON.stringify(this.currentRoom));
+      }
+    } catch {}
+
+    // Update Firestore non-blocking
+    if (!isHost && guestPlayer) {
+      const updatePayload: any = {
         guest: {
           id: guestPlayer.id,
           name: guestPlayer.name,
           countryCode: null,
           isReady: false,
-          profilePictureUrl: this.localPlayerProfilePictureUrl,
+          profilePictureUrl: guestPlayer.profilePictureUrl || null,
         },
-        players: updatedPlayers,
-        status: nextStatus,
-        updatedAt: Date.now(),
-      });
-
-      this.currentRoom = {
-        roomId: code,
-        host: {
-          id: data.host.id,
-          name: data.host.name,
-          countryCode: data.host.countryCode || null,
-          role: 'host',
-          isReady: data.host.isReady || false,
+        players: updatedPlayers.map((p) => ({
+          id: p.id,
+          name: p.name,
+          countryCode: p.countryCode || null,
+          role: p.role,
+          isReady: Boolean(p.isReady),
           isLocal: false,
-          profilePictureUrl: data.host.profilePictureUrl || null,
-        },
-        guest: guestPlayer,
-        gameMode: data.gameMode || 'match',
+          profilePictureUrl: p.profilePictureUrl || null,
+        })),
         status: nextStatus,
-        currentKickerRole: 'host',
-        score: { host: 0, guest: 0 },
-        turn: 1,
-        positionIndex: data.positionIndex ?? 0,
-        countdown: null,
-        countdownStartTime: null,
-        isMatchmaking: data.isMatchmaking || false,
-        isPublic: data.isPublic ?? true,
-        maxPlayers: data.maxPlayers || (isKoth ? 4 : 2),
-        players: updatedPlayers,
-        kothState: data.kothState,
+        updatedAt: now,
       };
-
-      this.listenToFirestoreRoom(code);
-    } catch (e: any) {
-      console.warn('Firestore join warning:', e);
-      if (e?.message && !e.message.includes('permission')) {
-        this.emit('error', { message: e.message });
+      if (data.gameMode === 'survival' && !data.survivalLives) {
+        updatePayload.survivalLives = { host: 3, guest: 3 };
       }
+      updateDoc(roomRef, updatePayload).catch((updateErr) => {
+        console.warn('Firestore room join update notice (quota or network):', updateErr);
+      });
     }
 
-    // 2. Connect via WebRTC P2P
-    this.initPeerGuest(code);
+    // 2. Start listener & heartbeat
+    this.listenToFirestoreRoom(code);
+    this.startHeartbeat(code);
 
-    // 3. Send join message over WebRTC & WS
-    this.send('join_room', {
-      roomId: code,
-      playerName: this.localPlayerName,
-      playerId: this.localPlayerId,
-      profilePictureUrl: this.localPlayerProfilePictureUrl,
-    });
+    // 3. Connect via WebRTC P2P
+    if (!isHost) {
+      this.initPeerGuest(code);
+      this.send('join_room', {
+        roomId: code,
+        playerName: this.localPlayerName,
+        playerId: this.localPlayerId,
+        profilePictureUrl: this.localPlayerProfilePictureUrl,
+      });
+    }
 
-    this.emit('room_joined', { roomId: code, role: 'guest', room: this.currentRoom });
+    // 4. Broadcast room update on channel
+    if (this.broadcastChannel) {
+      try {
+        this.broadcastChannel.postMessage({
+          event: 'room_updated_broadcast',
+          payload: { roomId: code, room: this.currentRoom },
+          senderId: this.localPlayerId,
+        });
+      } catch {}
+    }
+
+    const userRole = isHost ? 'host' : 'guest';
+    this.emit('room_joined', { roomId: code, role: userRole, room: this.currentRoom });
     return true;
   }
 
@@ -1978,6 +2612,15 @@ class OnlineMatchManager {
     }).catch(() => {});
     this.send('koth_lobby_updated', { players });
     this.emit('koth_lobby_updated', { players, room: this.currentRoom });
+  }
+
+  /**
+   * King of the Hill: Broadcast synchronized match start countdown to all peers in lobby
+   */
+  public async startKothMatchStarting(kothState: KingOfTheHillMatchState, countdown = 3) {
+    if (!this.currentRoom) return;
+    this.send('koth_match_starting', { kothState, countdown });
+    this.emit('koth_match_starting', { kothState, countdown });
   }
 
   /**
@@ -2040,7 +2683,8 @@ class OnlineMatchManager {
   public async advanceKothRound(
     nextRound: number,
     contenders: KingOfTheHillContender[],
-    positionIndex: number
+    positionIndex: number,
+    roundPositions?: number[]
   ) {
     if (!this.currentRoom) return;
     if (this.currentRoom.kothState) {
@@ -2048,18 +2692,25 @@ class OnlineMatchManager {
       this.currentRoom.kothState.contenders = contenders;
       this.currentRoom.kothState.positionIndex = positionIndex;
       this.currentRoom.kothState.activeShotIndex = 0;
+      if (roundPositions) {
+        this.currentRoom.kothState.roundPositions = roundPositions;
+      }
     }
-    const payload = { nextRound, contenders, positionIndex };
+    const payload = { nextRound, contenders, positionIndex, roundPositions };
     this.send('koth_round_elimination', payload);
     this.emit('koth_round_elimination', payload);
     const roomRef = doc(db, 'rooms', this.currentRoom.roomId);
-    updateDoc(roomRef, {
+    const updateData: Record<string, any> = {
       'kothState.currentRound': nextRound,
       'kothState.contenders': contenders,
       'kothState.positionIndex': positionIndex,
       'kothState.activeShotIndex': 0,
       updatedAt: Date.now(),
-    }).catch(() => {});
+    };
+    if (roundPositions) {
+      updateData['kothState.roundPositions'] = roundPositions;
+    }
+    updateDoc(roomRef, updateData).catch(() => {});
   }
 
   /**
@@ -2622,11 +3273,36 @@ class OnlineMatchManager {
   public async setRoomPublic(isPublic: boolean): Promise<void> {
     if (!this.currentRoom) return;
     this.currentRoom.isPublic = isPublic;
+    const now = Date.now();
     try {
-      await this.updateFirestoreRoom({ isPublic: Boolean(isPublic), updatedAt: Date.now() });
+      await this.updateFirestoreRoom({ isPublic: Boolean(isPublic), updatedAt: now });
     } catch (e) {
       console.warn('Failed to update room public visibility:', e);
     }
+
+    if (typeof localStorage !== 'undefined' && this.currentRoom?.roomId) {
+      try {
+        const raw = localStorage.getItem('fk_active_public_rooms');
+        const map = raw ? JSON.parse(raw) : {};
+        if (isPublic) {
+          map[this.currentRoom.roomId] = { ...this.currentRoom, updatedAt: now };
+        } else {
+          delete map[this.currentRoom.roomId];
+        }
+        localStorage.setItem('fk_active_public_rooms', JSON.stringify(map));
+      } catch {}
+    }
+
+    if (this.broadcastChannel) {
+      try {
+        this.broadcastChannel.postMessage({
+          event: 'public_rooms_updated',
+          payload: { roomId: this.currentRoom.roomId, isPublic },
+          senderId: this.localPlayerId,
+        });
+      } catch {}
+    }
+
     this.emit('room_updated', { room: this.currentRoom });
   }
 
@@ -2847,11 +3523,22 @@ class OnlineMatchManager {
   }
 
   /**
-   * King of the Hill: Remaining player claims room leader if current host disconnected or left
+   * King of the Hill: Remaining player claims room leader ONLY if current host has genuinely disconnected or left
    */
   public async claimHostLeadership() {
     if (!this.currentRoom) return;
     const room = this.currentRoom;
+
+    // ROBUST CHECK: Never claim host leadership if the host is still connected or active in match
+    if (room.host?.id && room.host.id !== this.localPlayerId) {
+      // If room status is not explicitly opponent_left / disconnected, check player presence
+      const hostPlayer = room.players?.find((p) => p.id === room.host?.id);
+      if (hostPlayer && hostPlayer.lastSeen && Date.now() - hostPlayer.lastSeen < 45000 && !room.isOpponentDisconnected && room.status !== 'opponent_left') {
+        // Host is still active, reject leadership stealing
+        return;
+      }
+    }
+
     const roomId = room.roomId;
     const existingPlayers = Array.isArray(room.players) && room.players.length > 0
       ? room.players
@@ -2977,35 +3664,125 @@ class OnlineMatchManager {
     maxPlayers?: number;
   }> {
     if (!roomId) return { exists: false };
-    try {
-      const cleanId = roomId.trim().toUpperCase();
-      const roomRef = doc(db, 'rooms', cleanId);
-      const snap = await getDoc(roomRef);
-      if (!snap.exists()) {
-        return { exists: false };
-      }
-      const data = snap.data() as any;
-      if (data.status === 'cancelled' || data.status === 'deleted') {
-        return { exists: false, status: data.status };
-      }
-      const isKoth = data.gameMode === 'king_of_the_hill';
-      const playersList = Array.isArray(data.players)
-        ? data.players
-        : (data.guest ? [data.host, data.guest] : [data.host]);
-      const maxCount = isKoth ? 4 : 2;
-      const isFull = playersList.length >= maxCount;
+    const cleanId = roomId.trim().toUpperCase();
 
+    // 1. In-memory check: If this is our active room, it definitely exists!
+    if (this.currentRoom && this.currentRoom.roomId === cleanId) {
+      const isKoth = this.currentRoom.gameMode === 'king_of_the_hill';
+      const count = Array.isArray(this.currentRoom.players)
+        ? this.currentRoom.players.length
+        : (this.currentRoom.guest ? 2 : 1);
+      const maxCount = this.currentRoom.maxPlayers || (isKoth ? 4 : 2);
       return {
         exists: true,
-        status: data.status,
-        hostId: data.host?.id,
-        isFull,
-        playerCount: playersList.length,
+        status: this.currentRoom.status,
+        hostId: this.currentRoom.host?.id,
+        isFull: count >= maxCount,
+        playerCount: count,
         maxPlayers: maxCount,
       };
-    } catch {
-      return { exists: false };
     }
+
+    // 2. Local storage checks (multi-tab or quota exhausted)
+    let localRoomData: any = null;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const rawSingle = localStorage.getItem(`fk_room_${cleanId}`);
+        if (rawSingle) localRoomData = JSON.parse(rawSingle);
+
+        if (!localRoomData) {
+          const rawAll = localStorage.getItem('fk_all_active_rooms');
+          if (rawAll) {
+            const parsedAll = JSON.parse(rawAll);
+            if (parsedAll && parsedAll[cleanId]) {
+              localRoomData = parsedAll[cleanId]?.room || parsedAll[cleanId];
+            }
+          }
+        }
+
+        if (!localRoomData) {
+          const rawPub = localStorage.getItem('fk_active_public_rooms');
+          if (rawPub) {
+            const parsedPub = JSON.parse(rawPub);
+            if (parsedPub && parsedPub[cleanId]) {
+              localRoomData = parsedPub[cleanId];
+            }
+          }
+        }
+      }
+      if (!localRoomData && typeof sessionStorage !== 'undefined') {
+        const cached = sessionStorage.getItem(`fk_room_${cleanId}`);
+        if (cached) localRoomData = JSON.parse(cached);
+      }
+    } catch {}
+
+    // 3. Fast BroadcastChannel probe across open browser windows
+    if (!localRoomData && this.broadcastChannel) {
+      try {
+        localRoomData = await this.probeRoomOverBroadcast(cleanId, 250);
+      } catch {}
+    }
+
+    // 4. Firestore query with timeout
+    try {
+      const roomRef = doc(db, 'rooms', cleanId);
+      let snap: any = null;
+      try {
+        const snapPromise = getDoc(roomRef);
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 6000));
+        snap = await Promise.race([snapPromise, timeoutPromise]);
+      } catch {
+        try {
+          snap = await getDoc(roomRef);
+        } catch {}
+      }
+
+      if (snap?.exists()) {
+        const data = snap.data() as any;
+        if (data.status === 'cancelled' || data.status === 'deleted') {
+          return { exists: false, status: data.status };
+        }
+        const isKoth = data.gameMode === 'king_of_the_hill';
+        const playersList = Array.isArray(data.players)
+          ? data.players
+          : (data.guest ? [data.host, data.guest] : [data.host]);
+        const maxCount = isKoth ? 4 : 2;
+        const isFull = playersList.length >= maxCount;
+
+        return {
+          exists: true,
+          status: data.status,
+          hostId: data.host?.id,
+          isFull,
+          playerCount: playersList.length,
+          maxPlayers: maxCount,
+        };
+      }
+    } catch (err) {
+      console.warn('checkRoomExists network or quota notice:', err);
+    }
+
+    // 5. If Firestore failed or timed out, but local room data exists and is valid
+    if (localRoomData) {
+      if (localRoomData.status === 'cancelled' || localRoomData.status === 'deleted') {
+        return { exists: false, status: localRoomData.status };
+      }
+      const isKoth = localRoomData.gameMode === 'king_of_the_hill';
+      const count = Array.isArray(localRoomData.players)
+        ? localRoomData.players.length
+        : (localRoomData.guest ? 2 : 1);
+      const maxCount = localRoomData.maxPlayers || (isKoth ? 4 : 2);
+      return {
+        exists: true,
+        status: localRoomData.status,
+        hostId: localRoomData.host?.id,
+        isFull: count >= maxCount,
+        playerCount: count,
+        maxPlayers: maxCount,
+      };
+    }
+
+    return { exists: false };
   }
 
   private cleanupLocalLeaving() {
@@ -3033,6 +3810,30 @@ class OnlineMatchManager {
     if (this.peer) {
       try { this.peer.destroy(); } catch {}
       this.peer = null;
+    }
+
+    if (this.currentRoom?.roomId) {
+      const leavingRoomId = this.currentRoom.roomId;
+      try {
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.removeItem(`fk_room_${leavingRoomId}`);
+        }
+        if (typeof localStorage !== 'undefined') {
+          const raw = localStorage.getItem('fk_active_public_rooms');
+          if (raw) {
+            const map = JSON.parse(raw);
+            delete map[leavingRoomId];
+            localStorage.setItem('fk_active_public_rooms', JSON.stringify(map));
+          }
+        }
+        if (this.broadcastChannel) {
+          this.broadcastChannel.postMessage({
+            event: 'public_rooms_updated',
+            payload: { roomId: leavingRoomId, removed: true },
+            senderId: this.localPlayerId,
+          });
+        }
+      } catch {}
     }
 
     this.currentRoom = null;

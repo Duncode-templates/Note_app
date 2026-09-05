@@ -109,6 +109,21 @@ export default function KingOfTheHillRulesModal({
                 </p>
               </div>
             </div>
+
+            {/* 4. Champion Reward */}
+            <div className="bg-amber-50/80 border-[2px] border-amber-400 rounded-[16px] p-3 flex items-center gap-3 shadow-[0_3px_0_0_#000]">
+              <div className="w-9 h-9 rounded-[12px] bg-amber-400 border border-black flex items-center justify-center text-black shrink-0 shadow-2xs">
+                <Crown className="w-5 h-5 fill-black text-black" />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="font-black text-xs sm:text-sm uppercase tracking-wider text-amber-950">
+                  Free Entry • 30 Coins Champion Reward
+                </span>
+                <p className="text-[11px] sm:text-xs font-bold text-amber-800 leading-tight mt-0.5">
+                  No entry fee or staking. The champion who conquers the 3rd round wins the tournament crown and 30 coins!
+                </p>
+              </div>
+            </div>
           </div>
 
           {/* Continue Button */}

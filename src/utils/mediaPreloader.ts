@@ -2,12 +2,14 @@
 // Combines zero-latency Web Audio buffer playback, studio mastering equalizer & dynamics compressor.
 import { KICK_AUDIO_BASE64, KEEPER_HIT_AUDIO_BASE64 } from '../assets/audioData';
 import { STICKERS } from '../assets/stickers';
-import { updateCrowdMuteState } from './stadiumCrowdAudio';
 import whistleAudioSrc from '../assets/Whistle.mp3';
 import goalCheerAudioSrc from '../assets/Goalcheer.mp3';
 import crowdNoiseAudioSrc from '../assets/Crowd-noise.mp3';
 
 export { whistleAudioSrc, goalCheerAudioSrc, crowdNoiseAudioSrc };
+
+// Set of listeners notified on global audio mute/unmute changes
+const audioMuteListeners = new Set<(isMuted: boolean) => void>();
 
 const AUDIO_SRC = KICK_AUDIO_BASE64 || '/Soccer-kick.mp3';
 const KEEPER_HIT_AUDIO_SRC = KEEPER_HIT_AUDIO_BASE64 || '/Ball-hit-player.wav';
@@ -51,8 +53,6 @@ try {
     }
   }
 } catch {}
-
-const audioMuteListeners = new Set<(isMuted: boolean) => void>();
 
 export function isEffectivelyMuted(): boolean {
   return isSdkMutedGlobally || isAdMutedGlobally || isUserMutedGlobally || isTabHiddenMutedGlobally || sdkVolumeLevel <= 0.001;
@@ -98,7 +98,6 @@ function notifyMuteListeners() {
 function applyGlobalMuteState() {
   const muted = isEffectivelyMuted();
   const currentVolume = muted ? 0.0 : sdkVolumeLevel;
-  updateCrowdMuteState(muted);
 
   if (sharedAudioCtx) {
     const now = sharedAudioCtx.currentTime;
@@ -785,11 +784,20 @@ export function playKeeperHitSound(volume = 0.9) {
 
 export const playBallHitPlayerSound = playKeeperHitSound;
 
+let lastWhistleTimestamp = 0;
+const WHISTLE_COOLDOWN_MS = 2200;
+
 /**
  * Plays the uploaded Whistle.mp3 audio file when the kicker is about to play the ball.
+ * Enforces a strict cooldown to prevent duplicate/echoing referee whistle triggers.
  */
-export function playWhistleSound(volume = 0.75) {
+export function playWhistleSound(volume = 0.75, force = false) {
   if (isEffectivelyMuted()) return;
+  const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  if (!force && now - lastWhistleTimestamp < WHISTLE_COOLDOWN_MS) {
+    return;
+  }
+  lastWhistleTimestamp = now;
   const normVol = Math.max(0.1, Math.min(1.0, volume));
 
   try {
@@ -849,17 +857,113 @@ export function playWhistleSound(volume = 0.75) {
 
 export const playRefereeWhistle = playWhistleSound;
 
+let activeGoalCheerSource: AudioBufferSourceNode | null = null;
+let activeGoalCheerGain: GainNode | null = null;
+let activeGoalCheerElement: HTMLAudioElement | null = null;
+
 /**
- * Goal sound & crowd cheer removed as requested
+ * Plays the uploaded Goalcheer.mp3 audio file when a goal is scored.
  */
-export function playGoalCheerSound(_volume = 0.85) {
-  // Goal sound removed as requested
+export function playGoalCheerSound(volume = 0.85) {
+  if (isEffectivelyMuted()) return;
+  stopGoalCheerSound();
+  const normVol = Math.max(0.1, Math.min(1.0, volume));
+
+  try {
+    const ctx = getSharedAudioContext();
+    let playedWithWebAudio = false;
+
+    if (ctx) {
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+
+      const longSoundInput = getLongSoundAudioInput();
+
+      if (goalCheerAudioBuffer && longSoundInput) {
+        const source = ctx.createBufferSource();
+        source.buffer = goalCheerAudioBuffer;
+
+        const gainNode = ctx.createGain();
+        gainNode.gain.setValueAtTime(normVol, ctx.currentTime);
+
+        source.connect(gainNode);
+        gainNode.connect(longSoundInput);
+        source.start(ctx.currentTime);
+        activeGoalCheerSource = source;
+        activeGoalCheerGain = gainNode;
+        source.onended = () => {
+          if (activeGoalCheerSource === source) {
+            activeGoalCheerSource = null;
+            activeGoalCheerGain = null;
+          }
+        };
+        playedWithWebAudio = true;
+      }
+    }
+
+    if (!playedWithWebAudio) {
+      if (goalCheerAudioPool.length === 0) {
+        initAudioUnlockListener();
+      }
+      if (goalCheerAudioPool.length > 0) {
+        let audioToPlay: HTMLAudioElement | null = null;
+        for (let i = 0; i < goalCheerAudioPool.length; i++) {
+          const audio = goalCheerAudioPool[i];
+          if (audio.paused || audio.ended) {
+            audioToPlay = audio;
+            break;
+          }
+        }
+        if (!audioToPlay) {
+          audioToPlay = goalCheerAudioPool[nextGoalCheerPoolIndex];
+          nextGoalCheerPoolIndex = (nextGoalCheerPoolIndex + 1) % goalCheerAudioPool.length;
+        }
+        if (audioToPlay) {
+          audioToPlay.currentTime = 0;
+          audioToPlay.volume = normVol;
+          const p = audioToPlay.play();
+          if (p !== undefined) {
+            p.catch(() => {});
+          }
+          activeGoalCheerElement = audioToPlay;
+        }
+      }
+    }
+  } catch {}
 }
 
 export const playGoalSound = playGoalCheerSound;
 
 export function stopGoalCheerSound() {
-  // Goal sound removed as requested
+  try {
+    if (activeGoalCheerSource) {
+      try {
+        if (activeGoalCheerGain && sharedAudioCtx) {
+          activeGoalCheerGain.gain.setValueAtTime(0.001, sharedAudioCtx.currentTime);
+        }
+        activeGoalCheerSource.stop();
+        activeGoalCheerSource.disconnect();
+      } catch {}
+      activeGoalCheerSource = null;
+      activeGoalCheerGain = null;
+    }
+    if (activeGoalCheerElement) {
+      try {
+        activeGoalCheerElement.pause();
+        activeGoalCheerElement.currentTime = 0;
+      } catch {}
+      activeGoalCheerElement = null;
+    }
+    for (const el of goalCheerAudioPool) {
+      try {
+        if (!el.paused) {
+          el.pause();
+          el.currentTime = 0;
+        }
+      } catch {}
+    }
+  } catch {}
 }
 
 export const stopGoalSound = stopGoalCheerSound;

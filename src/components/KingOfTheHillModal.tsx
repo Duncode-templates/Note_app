@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Crown, Users, HelpCircle, Check, Share2, ArrowLeft } from 'lucide-react';
-import { KING_WAGER_TIERS } from '../data/kingOfTheHillData';
+import { X, Crown, Users, HelpCircle, Check, Share2, ArrowLeft, Target, Trophy, Swords } from 'lucide-react';
 import { crazyGamesSDK } from '../utils/crazyGamesSDK';
 import { useTranslation } from '../utils/i18n';
 import CoinIcon from './CoinIcon';
@@ -24,19 +23,12 @@ export default function KingOfTheHillModal({
   onOpenRules,
 }: KingOfTheHillModalProps) {
   const { t } = useTranslation();
-  const playerCount: 4 = 4;
-  const [selectedTierId, setSelectedTierId] = useState<'free' | 'rookie' | 'pro' | 'champion'>('free');
   const [copiedInvite, setCopiedInvite] = useState(false);
 
   if (!isOpen) return null;
 
-  const selectedTier = KING_WAGER_TIERS.find((t) => t.id === selectedTierId) || KING_WAGER_TIERS[0];
-  const prizePot = selectedTier.prizePot;
-  const canAfford = userCoins >= selectedTier.entryFee;
-
   const handleStart = () => {
-    if (!canAfford) return;
-    onStartMatch(4, selectedTierId);
+    onStartMatch(4, 'free');
   };
 
   const handleCopyInvite = async () => {
@@ -44,7 +36,7 @@ export default function KingOfTheHillModal({
       const inviteUrl = await crazyGamesSDK.inviteLink({
         mode: 'king_of_the_hill',
         players: '4',
-        tier: selectedTierId,
+        tier: 'free',
       });
       if (inviteUrl) {
         await navigator.clipboard.writeText(inviteUrl);
@@ -97,7 +89,7 @@ export default function KingOfTheHillModal({
                 {t('koth.title', 'KING OF THE HILL')}
               </h2>
               <p className="text-slate-600 text-xs sm:text-sm font-bold uppercase tracking-wider">
-                {t('koth.subtitleClean', 'Parallel Shootout • 4 Contenders')}
+                3-Round Knockout • 4 Contenders
               </p>
             </div>
           </div>
@@ -119,80 +111,72 @@ export default function KingOfTheHillModal({
             </button>
           )}
 
-          {/* Format Badge: 4 Contenders Standard */}
-          <div className="mb-4 bg-slate-100 border-2 border-black rounded-[16px] p-3 flex items-center justify-between shadow-2xs">
+          {/* Format Badge: 4 Contenders & 3 Rounds */}
+          <div className="mb-3 bg-slate-100 border-2 border-black rounded-[16px] p-3 flex items-center justify-between shadow-2xs">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-full bg-amber-400 border border-black flex items-center justify-center text-black font-black text-xs shrink-0">
                 <Users className="w-4 h-4" />
               </div>
               <div className="flex flex-col text-left">
-                <span className="font-black text-xs uppercase tracking-wide text-black flex items-center gap-1.5">
-                  4 CONTENDERS SHOOTOUT
+                <span className="font-black text-xs uppercase tracking-wide text-black">
+                  4 CONTENDERS • 3 ROUNDS
                 </span>
                 <span className="text-[10px] font-bold text-slate-600">
-                  4 Elimination Rounds • 1 Eliminated Per Round • 1 Champion
+                  Round 1 (4P) ➔ Round 2 (3P) ➔ Round 3 (1v1 Final)
                 </span>
               </div>
             </div>
-            <span className="text-[9px] font-black bg-black text-amber-300 px-2 py-1 rounded uppercase tracking-wider shrink-0">
-              4 PLAYERS
-            </span>
+            <div className="flex items-center gap-1 bg-amber-400 text-black px-2.5 py-1 rounded-full border border-black text-xs font-black">
+              <CoinIcon className="w-3.5 h-3.5" />
+              <span>30 REWARD</span>
+            </div>
           </div>
 
-          {/* Stakes / Wager Tiers */}
-          <div className="mb-5">
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-black uppercase tracking-wider text-slate-700">
-                {t('koth.selectStakes', 'SELECT ARENA STAKES & PRIZE POT')}
-              </label>
-              <div className="flex items-center gap-1 text-xs font-black text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-300">
-                <CoinIcon className="w-3.5 h-3.5" />
-                <span>{userCoins.toLocaleString()}</span>
+          {/* 3-Round Tournament Progression Breakdown */}
+          <div className="space-y-2 mb-4">
+            <div className="bg-slate-50 border border-black/30 rounded-[14px] p-2.5 flex items-center gap-2.5">
+              <span className="w-6 h-6 rounded-full bg-black text-amber-300 font-black text-xs flex items-center justify-center shrink-0">
+                1
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black uppercase text-black">Round 1: 4 Contenders</span>
+                  <span className="text-[10px] font-bold text-rose-600">1 ELIMINATED</span>
+                </div>
+                <span className="text-[11px] text-slate-600 font-medium">
+                  5 free kicks per player. Lowest score gets eliminated.
+                </span>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {KING_WAGER_TIERS.map((tier) => {
-                const isSelected = selectedTierId === tier.id;
-                const pot = tier.prizePot;
-                const affordable = userCoins >= tier.entryFee;
+            <div className="bg-slate-50 border border-black/30 rounded-[14px] p-2.5 flex items-center gap-2.5">
+              <span className="w-6 h-6 rounded-full bg-black text-amber-300 font-black text-xs flex items-center justify-center shrink-0">
+                2
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black uppercase text-black">Round 2: Semifinal (3 Players)</span>
+                  <span className="text-[10px] font-bold text-rose-600">1 ELIMINATED</span>
+                </div>
+                <span className="text-[11px] text-slate-600 font-medium">
+                  5 new pitch positions. Top 2 advance to the final.
+                </span>
+              </div>
+            </div>
 
-                return (
-                  <button
-                    key={tier.id}
-                    type="button"
-                    onClick={() => setSelectedTierId(tier.id)}
-                    className={`p-2.5 rounded-[16px] border-2 transition-all cursor-pointer flex flex-col items-center text-center ${
-                      isSelected
-                        ? 'bg-gradient-to-b from-yellow-300 to-amber-400 border-black shadow-[0_4px_0_0_#000]'
-                        : affordable
-                        ? 'bg-slate-50 hover:bg-slate-100 border-slate-300'
-                        : 'bg-slate-100 border-slate-200 opacity-60'
-                    }`}
-                  >
-                    <span className="text-[10px] font-black uppercase text-black mb-1">
-                      {tier.name}
-                    </span>
-                    <span className="text-[11px] font-black text-slate-700 flex items-center gap-1">
-                      {tier.entryFee === 0 ? (
-                        <span className="text-emerald-700 font-extrabold">FREE</span>
-                      ) : (
-                        <>
-                          <CoinIcon className="w-3 h-3" />
-                          {tier.entryFee}
-                        </>
-                      )}
-                    </span>
-                    <div className="mt-1.5 pt-1.5 border-t border-black/15 w-full flex flex-col items-center">
-                      <span className="text-[9px] font-bold text-slate-500 uppercase">WIN POT</span>
-                      <span className="text-xs font-black text-amber-900 flex items-center gap-0.5">
-                        <CoinIcon className="w-3 h-3" />
-                        {pot}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
+            <div className="bg-amber-50/70 border-2 border-amber-400 rounded-[14px] p-2.5 flex items-center gap-2.5">
+              <span className="w-6 h-6 rounded-full bg-amber-400 text-black font-black text-xs flex items-center justify-center shrink-0 border border-black">
+                3
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black uppercase text-amber-950">Round 3: Grand Final (1v1)</span>
+                  <span className="text-[10px] font-black text-amber-700">CHAMPION DECREED</span>
+                </div>
+                <span className="text-[11px] text-amber-900 font-medium">
+                  Direct head-to-head. Winner claims the King Crown + 30 Coins!
+                </span>
+              </div>
             </div>
           </div>
 
@@ -202,13 +186,8 @@ export default function KingOfTheHillModal({
             <motion.button
               whileHover={{ y: -2, scale: 1.015 }}
               whileTap={{ y: 4, scale: 0.98 }}
-              disabled={!canAfford}
               onClick={handleStart}
-              className={`flex-1 py-3.5 sm:py-4 px-4 rounded-[18px] font-black text-base uppercase tracking-wider border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer flex items-center justify-center gap-2 outline-none ${
-                canAfford
-                  ? 'bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-400 text-black'
-                  : 'bg-slate-300 text-slate-600 cursor-not-allowed'
-              }`}
+              className="flex-1 py-3.5 sm:py-4 px-4 rounded-[18px] font-black text-base uppercase tracking-wider border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer flex items-center justify-center gap-2 outline-none bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-400 text-black"
             >
               <Crown className="w-5 h-5 fill-black text-black" />
               <span>{t('koth.playNow', 'START SHOOTOUT')}</span>

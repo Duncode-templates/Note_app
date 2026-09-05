@@ -583,8 +583,16 @@ export default function App() {
       setSelectedCountry(COUNTRIES_DATA[0]);
     }
     if (room.gameMode === 'king_of_the_hill') {
+      setGameMode('king_of_the_hill');
+      setModeContext('King of the Hill');
       setCurrentView('koth_online_lobby');
+    } else if (room.gameMode === 'survival') {
+      setGameMode('survival');
+      setModeContext('Online 1v1 Survival');
+      setCurrentView('online_country_selection');
     } else {
+      setGameMode('match');
+      setModeContext(room.wagerTier ? 'Coin Wager Match' : '1v1 Online Match');
       setCurrentView('online_country_selection');
     }
   };

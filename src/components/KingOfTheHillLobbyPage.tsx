@@ -130,7 +130,7 @@ export default function KingOfTheHillLobbyPage({
 
             <div className="flex items-center bg-slate-900 text-amber-300 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-[14px] sm:rounded-[16px] border-[2px] sm:border-[2.5px] border-black gap-1 sm:gap-1.5 shadow-[0_2.5px_0_0_#000] sm:shadow-[0_3px_0_0_#000] font-black text-[10px] sm:text-xs uppercase tracking-wider">
               <Crown className="w-3 h-3 sm:w-3.5 sm:h-3.5 fill-amber-300 text-amber-300" />
-              <span>SURVIVE 4 ROUNDS</span>
+              <span>SURVIVE 3 ROUNDS</span>
             </div>
           </div>
 

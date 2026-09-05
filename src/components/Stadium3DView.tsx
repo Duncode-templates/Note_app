@@ -1096,8 +1096,13 @@ export default function Stadium3DView({
 
   // 3D Stadium Scene Loading Screen State & Progress
   const [sceneLoading, setSceneLoading] = useState<boolean>(!savedReplayClip);
+  const sceneLoadingRef = useRef<boolean>(!savedReplayClip);
   const [loadingProgress, setLoadingProgress] = useState<number>(savedReplayClip ? 100 : 0);
   const isSavedReplayModeRef = useRef<boolean>(Boolean(savedReplayClip));
+
+  useEffect(() => {
+    sceneLoadingRef.current = sceneLoading;
+  }, [sceneLoading]);
 
   useEffect(() => {
     isSavedReplayModeRef.current = Boolean(savedReplayClip);
@@ -1175,10 +1180,14 @@ export default function Stadium3DView({
 
     // 2.4s loading duration with smooth transition to the first free kick position
     const timer = setTimeout(() => {
+      sceneLoadingRef.current = false;
       setSceneLoading(false);
       onLoadingChange?.(false);
       crazyGamesSDK.loadingStop();
       crazyGamesSDK.gameplayStart();
+      if (!savedReplayClip) {
+        playWhistleSound(0.75, true);
+      }
     }, 2400);
 
     return () => {
@@ -1237,10 +1246,11 @@ export default function Stadium3DView({
     // Media unlock listener active
   }, []);
 
-  // Dynamic Real Stadium Crowd Audio & Normal Chants Engine (Wind Sound in Survival Mode)
+  // Dynamic Real Stadium Crowd Audio & Normal Chants Engine (Wind Sound in Survival Mode, silenced in King of the Hill)
   useEffect(() => {
-    if (!isPracticeMode && !sceneLoading) {
-      startMatchCrowd({ isPractice: isPracticeMode, isSurvival: isSurvival });
+    const isKothMode = gameMode === 'king_of_the_hill';
+    if (!isPracticeMode && !sceneLoading && !isKothMode) {
+      startMatchCrowd({ isPractice: isPracticeMode, isSurvival: isSurvival, isKoth: isKothMode });
     } else {
       stopMatchCrowd();
     }
@@ -1248,7 +1258,7 @@ export default function Stadium3DView({
       stopMatchCrowd();
       stopGoalCheerSound();
     };
-  }, [isPracticeMode, sceneLoading, isSurvival]);
+  }, [isPracticeMode, sceneLoading, isSurvival, gameMode]);
 
   const shotOutcomeRef = useRef<string | null>(null);
   const isPausedRef = useRef<boolean>(false);
@@ -1573,18 +1583,19 @@ export default function Stadium3DView({
       shotOutcomeRef.current = outcome;
       setShotOutcome(outcome);
 
-      // Trigger dynamic stadium crowd reaction based on shot outcome (disabled in training/practice modes)
+      // Trigger dynamic stadium crowd reaction based on shot outcome (disabled in training/practice and King of the Hill modes)
+      const isKothMatch = gameMode === 'king_of_the_hill';
       if (outcome === 'GOAL') {
-        if (!isPracticeMode) {
+        if (!isPracticeMode && !isKothMatch) {
           setCrowdExcitement('goal');
           playGoalCheerSound();
         }
       } else if (outcome === 'HIT THE WOODWORK' || outcome.toUpperCase().includes('SAVE') || outcome.toUpperCase().includes('DEFLECT')) {
-        if (!isPracticeMode) {
+        if (!isPracticeMode && !isKothMatch) {
           setCrowdExcitement('save_reaction');
         }
       } else if (outcome.toUpperCase().includes('WIDE') || outcome.toUpperCase().includes('CROSSBAR') || outcome.toUpperCase().includes('MISS') || outcome.toUpperCase().includes('OVER')) {
-        if (!isPracticeMode) {
+        if (!isPracticeMode && !isKothMatch) {
           setCrowdExcitement('miss_groan');
         }
       }
@@ -2955,10 +2966,13 @@ export default function Stadium3DView({
     targetDist?: number,
     targetXOff?: number,
     smoothCamera: boolean = false,
-    camDurationMs: number = 850
+    camDurationMs: number = 850,
+    skipWhistle: boolean = false
   ) => {
     stopGoalCheerSound();
-    playWhistleSound();
+    if (!skipWhistle && !sceneLoadingRef.current && !savedReplayClip) {
+      playWhistleSound();
+    }
     setSetupStep('aim');
     setPower(0);
     setAimProgress(0.5);
@@ -3386,10 +3400,10 @@ export default function Stadium3DView({
       ? forcedGkStartX
       : calculateRealisticGoalkeeperStartX(pos.xOffset, isPenaltyTrainingRef.current || isPenaltyShootoutRef.current);
 
-    const isInitialLoading = sceneLoading || !cameraRef.current || cameraRef.current.position.lengthSq() < 1;
+    const isInitialLoading = sceneLoadingRef.current || sceneLoading || !cameraRef.current || cameraRef.current.position.lengthSq() < 1;
     const effectiveSmooth = smoothTransition && !isInitialLoading;
 
-    resetToDefaultState(targetGkStartX, pos.distance, pos.xOffset, effectiveSmooth, 900);
+    resetToDefaultState(targetGkStartX, pos.distance, pos.xOffset, effectiveSmooth, 900, isInitialLoading);
     setFreeKickEpoch((prev) => prev + 1);
   };
 

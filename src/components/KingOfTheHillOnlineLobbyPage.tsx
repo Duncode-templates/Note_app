@@ -8,7 +8,6 @@ import {
   Link as LinkIcon,
   Users,
   Play,
-  Bot,
   User,
   Globe,
   Lock,
@@ -58,6 +57,8 @@ export default function KingOfTheHillOnlineLobbyPage({
   const [isRoomClosed, setIsRoomClosed] = useState(false);
   const [closedReason, setClosedReason] = useState('');
   const [countdownSeconds, setCountdownSeconds] = useState<number | null>(null);
+  const [startingCountdown, setStartingCountdown] = useState<number | null>(null);
+  const pendingMatchStateRef = useRef<KingOfTheHillMatchState | null>(null);
   const [bannerNotice, setBannerNotice] = useState<{ text: string; type: 'success' | 'info' } | null>(null);
 
   const localPlayerId = onlineMatchManager.localPlayerId;
@@ -82,13 +83,19 @@ export default function KingOfTheHillOnlineLobbyPage({
     localPlayerIdRef.current = localPlayerId;
   }, [isHost, activePlayers, localPlayerId]);
 
-  // 1. Check on mount whether this match/room still exists in Firestore
+  // 1. Check on mount whether this match/room still exists in Firestore (for guests only)
   useEffect(() => {
     let isMounted = true;
     if (!room.roomId) return;
+    // CRITICAL: The host actively created and owns this lobby; never self-close host!
+    if (isHost) return;
 
     onlineMatchManager.checkRoomExists(room.roomId).then((res) => {
       if (isMounted && !res.exists) {
+        // If local player is already connected or in-memory room matches, do NOT close!
+        if (onlineMatchManager.currentRoom?.roomId === room.roomId) {
+          return;
+        }
         setIsRoomClosed(true);
         setClosedReason(t('online.roomNoLongerExists', 'This King of the Hill match or room no longer exists.'));
       }
@@ -97,7 +104,7 @@ export default function KingOfTheHillOnlineLobbyPage({
     return () => {
       isMounted = false;
     };
-  }, [room.roomId, t]);
+  }, [room.roomId, isHost, t]);
 
   // 2. Auto countdown and redirect if match/room no longer exists
   useEffect(() => {
@@ -150,16 +157,19 @@ export default function KingOfTheHillOnlineLobbyPage({
 
     // Detect if match room was closed or no longer exists
     const unsubNotFound = onlineMatchManager.on('room_not_found', (payload) => {
+      if (isHostRef.current) return;
       setIsRoomClosed(true);
       setClosedReason(payload?.message || t('online.roomNoLongerExists', 'This match no longer exists or was closed.'));
     });
 
     const unsubCancelled = onlineMatchManager.on('room_cancelled', () => {
+      if (isHostRef.current) return;
       setIsRoomClosed(true);
       setClosedReason(t('online.roomCancelledByHost', 'The host has closed the room or the match no longer exists.'));
     });
 
     const unsubOpponentDisconnected = onlineMatchManager.on('opponent_disconnected', (payload) => {
+      if (isHostRef.current) return;
       if (payload?.message?.includes('closed') || payload?.message?.includes('exist') || payload?.message?.includes('cancelled')) {
         setIsRoomClosed(true);
         setClosedReason(payload.message);
@@ -193,6 +203,13 @@ export default function KingOfTheHillOnlineLobbyPage({
       }
     });
 
+    const unsubStarting = onlineMatchManager.on('koth_match_starting', (payload) => {
+      if (payload.kothState) {
+        pendingMatchStateRef.current = payload.kothState;
+        setStartingCountdown(payload.countdown ?? 3);
+      }
+    });
+
     const unsubStarted = onlineMatchManager.on('koth_match_started', (payload) => {
       if (payload.kothState) {
         matchStartedRef.current = true;
@@ -215,53 +232,34 @@ export default function KingOfTheHillOnlineLobbyPage({
       unsubCancelled();
       unsubOpponentDisconnected();
       unsubHostTransferred();
+      unsubStarting();
       unsubStarted();
       unsubKicked();
       crazyGamesSDK.hideInviteButton();
     };
   }, [room, onStartOnlineMatch, localPlayerId, t]);
 
-  // 4. Fallback & Watchdog: if the room host is missing or players disconnect/leave, update slots and leadership
+  // 4. Synchronized Match Starting Countdown Timer
   useEffect(() => {
-    if (!currentRoom.roomId || isRoomClosed || matchStartedRef.current) return;
-    if (!activePlayers || activePlayers.length === 0) return;
-
-    const hostStillPresent = activePlayers.some((p) => p.id === currentRoom.host?.id);
-    if (!hostStillPresent) {
-      if (activePlayers[0]?.id === localPlayerId) {
-        onlineMatchManager.claimHostLeadership();
+    if (startingCountdown === null) return;
+    if (startingCountdown > 0) {
+      const timer = setTimeout(() => {
+        setStartingCountdown((prev) => (prev !== null ? prev - 1 : null));
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+    if (startingCountdown === 0) {
+      matchStartedRef.current = true;
+      crazyGamesSDK.hideInviteButton();
+      const finalMatch = pendingMatchStateRef.current;
+      if (finalMatch) {
+        if (isHostRef.current) {
+          onlineMatchManager.startKothMatch(finalMatch);
+        }
+        onStartOnlineMatch(finalMatch);
       }
     }
-
-    // Presence watchdog: every 4 seconds, check if any peer disconnected without firing unload
-    const staleInterval = setInterval(() => {
-      const now = Date.now();
-      const currentPlayers = activePlayersRef.current;
-      if (!currentPlayers || currentPlayers.length === 0) return;
-
-      const stalePlayers = currentPlayers.filter(
-        (p) => p.id !== localPlayerIdRef.current && p.lastSeen && now - p.lastSeen > 15000
-      );
-
-      if (stalePlayers.length > 0) {
-        const remaining = currentPlayers.filter(
-          (p) => !stalePlayers.some((s) => s.id === p.id)
-        );
-
-        const hostIsStale = stalePlayers.some((s) => s.id === currentRoom.host?.id);
-        if (hostIsStale) {
-          if (remaining[0]?.id === localPlayerIdRef.current) {
-            onlineMatchManager.claimHostLeadership();
-          }
-        } else if (isHostRef.current) {
-          // Room leader prunes inactive disconnected player to free the slot
-          onlineMatchManager.updateKothLobbyPlayers(remaining);
-        }
-      }
-    }, 4000);
-
-    return () => clearInterval(staleInterval);
-  }, [activePlayers, currentRoom.host?.id, isHost, localPlayerId, currentRoom.roomId, isRoomClosed]);
+  }, [startingCountdown, onStartOnlineMatch]);
 
   // 5. Clean teardown & host transfer when leaving or navigating away
   useEffect(() => {
@@ -283,16 +281,6 @@ export default function KingOfTheHillOnlineLobbyPage({
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       window.removeEventListener('pagehide', handleBeforeUnload);
-      if (!matchStartedRef.current && currentRoom.roomId) {
-        if (isHostRef.current) {
-          const remaining = activePlayersRef.current.filter((p) => p.id !== localPlayerIdRef.current);
-          if (remaining.length > 0) {
-            onlineMatchManager.transferHostAndLeave(remaining[0].id);
-            return;
-          }
-        }
-        onlineMatchManager.leaveRoom();
-      }
     };
   }, [currentRoom.roomId]);
 
@@ -358,10 +346,18 @@ export default function KingOfTheHillOnlineLobbyPage({
 
   /**
    * Host starts the King of the Hill match:
-   * Generates 4 contenders (using connected online players + filling remaining slots with AI bots)
+   * Requires all 4 human players to be in the lobby.
    */
-  const handleHostStart = (fillBots: boolean = true) => {
+  const handleHostStart = () => {
     if (!isHost) return;
+
+    if (activePlayers.length < 4) {
+      setBannerNotice({
+        type: 'warning',
+        text: `All 4 players must join before the tournament can start! (${activePlayers.length}/4 currently in room)`,
+      });
+      return;
+    }
 
     // Build 4 contenders starting with the room leader
     const contenders: KingOfTheHillContender[] = [];
@@ -373,7 +369,7 @@ export default function KingOfTheHillOnlineLobbyPage({
     const nonHostPlayers = activePlayers.filter((p) => p.id !== hostPlayer?.id);
     const orderedPlayers = hostPlayer ? [hostPlayer, ...nonHostPlayers] : activePlayers;
 
-    // 1. Add connected human players with host first
+    // Add all 4 connected human players with host first
     orderedPlayers.slice(0, 4).forEach((p, idx) => {
       const pCountry = COUNTRIES_DATA.find(
         (c) => c.code.toLowerCase() === (p.countryCode || '').toLowerCase()
@@ -400,23 +396,6 @@ export default function KingOfTheHillOnlineLobbyPage({
       });
     });
 
-    // 2. Fill remaining slots up to 4 with realistic AI bots if requested
-    if (fillBots && contenders.length < 4) {
-      const needed = 4 - contenders.length;
-      const botPool = generateKingOfTheHillContenders('BotMaster', userCountry, null, 4).filter(
-        (b) => !b.isLocalPlayer
-      );
-      for (let i = 0; i < needed; i++) {
-        const botTemplate = botPool[i % botPool.length];
-        contenders.push({
-          ...botTemplate,
-          id: `bot_${i + 1}_${Date.now()}`,
-          isLocalPlayer: false,
-          isBot: true,
-        });
-      }
-    }
-
     // Build initial King of the Hill match state
     const firstContender = contenders[0];
     const initialMatch = createKingOfTheHillMatch(
@@ -428,11 +407,10 @@ export default function KingOfTheHillOnlineLobbyPage({
       contenders
     );
 
-    matchStartedRef.current = true;
-    // Broadcast match start to all peers
-    onlineMatchManager.startKothMatch(initialMatch);
-    crazyGamesSDK.hideInviteButton();
-    onStartOnlineMatch(initialMatch);
+    // Trigger synchronized 3-second match start countdown for all 4 peers
+    pendingMatchStateRef.current = initialMatch;
+    setStartingCountdown(3);
+    onlineMatchManager.startKothMatchStarting(initialMatch, 3);
   };
 
   const filteredCountries = COUNTRIES_DATA.filter((c) =>
@@ -557,56 +535,19 @@ export default function KingOfTheHillOnlineLobbyPage({
                 <span className="font-mono font-black text-3xl sm:text-4xl tracking-[0.2em] text-black">
                   #{currentRoom.roomId}
                 </span>
-                <span className="text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-0.5 rounded-full uppercase">
-                  {activePlayers.length}/4 {t('common.players', 'PLAYERS')}
+                <span className={`text-[10px] font-black border px-2.5 py-0.5 rounded-full uppercase ${
+                  activePlayers.length >= 4
+                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                    : 'bg-amber-100 text-amber-800 border-amber-300'
+                }`}>
+                  {activePlayers.length}/4 {t('common.players', 'PLAYERS')} {activePlayers.length >= 4 ? '• READY' : `• NEED ${4 - activePlayers.length} MORE`}
                 </span>
 
-                {/* Public / Private Room Status / Toggle */}
-                {isHost ? (
-                  <button
-                    onClick={async () => {
-                      const nextVal = currentRoom.isPublic === false ? true : false;
-                      setCurrentRoom((prev) => ({ ...prev, isPublic: nextVal }));
-                      await onlineMatchManager.setRoomPublic(nextVal);
-                    }}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border-2 border-black cursor-pointer transition-all shadow-2xs ${
-                      currentRoom.isPublic !== false
-                        ? 'bg-emerald-300 hover:bg-emerald-200 text-black'
-                        : 'bg-amber-200 hover:bg-amber-100 text-amber-950'
-                    }`}
-                    title={currentRoom.isPublic !== false ? 'Click to make Private' : 'Click to make Public'}
-                  >
-                    {currentRoom.isPublic !== false ? (
-                      <>
-                        <Globe className="w-3.5 h-3.5 text-emerald-950 stroke-[2.5]" />
-                        <span>PUBLIC ROOM</span>
-                      </>
-                    ) : (
-                      <>
-                        <Lock className="w-3.5 h-3.5 text-amber-950 stroke-[2.5]" />
-                        <span>PRIVATE ROOM</span>
-                      </>
-                    )}
-                  </button>
-                ) : (
-                  <span className={`flex items-center gap-1 text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase border ${
-                    currentRoom.isPublic !== false
-                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                      : 'bg-amber-100 text-amber-900 border-amber-300'
-                  }`}>
-                    {currentRoom.isPublic !== false ? (
-                      <>
-                        <Globe className="w-3 h-3 text-emerald-700" />
-                        <span>PUBLIC</span>
-                      </>
-                    ) : (
-                      <>
-                        <Lock className="w-3 h-3 text-amber-700" />
-                        <span>PRIVATE</span>
-                      </>
-                    )}
-                  </span>
-                )}
+                {/* King of the Hill Public Tournament Lobby badge */}
+                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border-2 border-black bg-emerald-300 text-black shadow-2xs">
+                  <Globe className="w-3.5 h-3.5 text-emerald-950 stroke-[2.5]" />
+                  <span>PUBLIC LOBBY</span>
+                </span>
               </div>
             </div>
 
@@ -732,7 +673,7 @@ export default function KingOfTheHillOnlineLobbyPage({
                       {t('online.waitingPlayer', 'SLOT')} #{slotIdx + 1} • {t('common.open', 'OPEN')}
                     </span>
                     <span className="text-[11px] font-bold text-slate-500">
-                      {isHost ? t('online.willBeBot', 'Can be filled with AI bot') : t('online.waitingToJoin', 'Waiting for challenger...')}
+                      {t('online.waitingToJoin', 'Waiting for challenger...')}
                     </span>
                   </div>
                 </div>
@@ -809,38 +750,42 @@ export default function KingOfTheHillOnlineLobbyPage({
         {/* Action Bottom Bar */}
         <div className="w-full flex flex-col sm:flex-row items-center justify-end gap-3 mt-auto pt-2">
           {isHost ? (
-            <>
-              {/* Host Start with Bots (if fewer than 4 human players) */}
-              {activePlayers.length < 4 && (
-                <motion.button
-                  whileHover={{ y: -2, scale: 1.02 }}
-                  whileTap={{ y: 3, scale: 0.98 }}
-                  onClick={() => handleHostStart(true)}
-                  className="w-full sm:w-auto py-4 px-6 rounded-[20px] font-black text-sm uppercase tracking-wider bg-gradient-to-r from-sky-400 to-blue-500 text-black border-[3px] border-black shadow-[0_5px_0_0_#000] cursor-pointer flex items-center justify-center gap-2.5 outline-none"
+            /* Host Start Tournament Button */
+            activePlayers.length < 4 ? (
+              <div className="w-full sm:w-auto flex flex-col sm:flex-row items-center gap-3">
+                <div className="flex items-center gap-2 px-4 py-3 rounded-[18px] bg-white border-[3px] border-black shadow-[0_4px_0_0_#000] text-slate-800 font-black text-xs sm:text-sm uppercase tracking-wider">
+                  <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />
+                  <span>WAITING FOR PLAYERS ({activePlayers.length}/4)</span>
+                </div>
+                <button
+                  disabled
+                  className="w-full sm:w-auto py-3.5 px-6 rounded-[18px] font-black text-xs sm:text-sm uppercase tracking-wider bg-slate-200 text-slate-400 border-[3px] border-slate-300 cursor-not-allowed flex items-center justify-center gap-2"
+                  title="Need all 4 players to join the lobby before starting the tournament"
                 >
-                  <Bot className="w-5 h-5 text-black" />
-                  <span>{t('online.startWithBots', 'START WITH AI BOTS (4P)')}</span>
-                </motion.button>
-              )}
-
-              {/* Host Start with connected players only (if 4 are ready) */}
+                  <Lock className="w-4 h-4 text-slate-400" />
+                  <span>NEED 4 PLAYERS TO START</span>
+                </button>
+              </div>
+            ) : (
               <motion.button
                 whileHover={{ y: -2, scale: 1.02 }}
                 whileTap={{ y: 3, scale: 0.98 }}
-                onClick={() => handleHostStart(activePlayers.length < 4)}
+                onClick={handleHostStart}
                 className="w-full sm:w-auto py-4 px-8 rounded-[20px] font-black text-base uppercase tracking-wider bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-400 text-black border-[3px] border-black shadow-[0_6px_0_0_#000] cursor-pointer flex items-center justify-center gap-3 outline-none"
               >
                 <Play className="w-6 h-6 fill-black text-black" />
-                <span>{t('online.startTournament', 'START TOURNAMENT')}</span>
+                <span>{t('online.startTournament', 'START TOURNAMENT')} (4/4 READY)</span>
               </motion.button>
-            </>
+            )
           ) : (
             /* Guest Waiting Status */
             <div className="w-full bg-white border-[3px] border-black rounded-[20px] p-4 flex items-center justify-between gap-3 shadow-[0_4px_0_0_#000]">
               <div className="flex items-center gap-2.5">
                 <Loader2 className="w-5 h-5 text-amber-500 animate-spin" />
                 <span className="font-black text-xs sm:text-sm uppercase text-slate-800">
-                  {t('online.waitingForHost', 'Waiting for Host to start tournament...')}
+                  {activePlayers.length < 4
+                    ? `WAITING FOR 4 PLAYERS TO JOIN (${activePlayers.length}/4 IN LOBBY)...`
+                    : t('online.waitingForHost', 'Waiting for Host to start tournament...')}
                 </span>
               </div>
               <button
@@ -854,6 +799,64 @@ export default function KingOfTheHillOnlineLobbyPage({
             </div>
           )}
         </div>
+
+        {/* Synchronized Match Starting Countdown Overlay */}
+        <AnimatePresence>
+          {startingCountdown !== null && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md select-none"
+            >
+              <motion.div
+                initial={{ scale: 0.85, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                className="w-full max-w-md bg-white border-[4px] border-black rounded-[28px] p-6 shadow-[0_12px_0_0_#000] text-black text-center relative overflow-hidden"
+              >
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-100 border-[2px] border-emerald-600 text-emerald-800 font-black text-xs uppercase tracking-wider mb-3">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                  <span>ALL 4 PLAYERS SYNCHRONIZED</span>
+                </div>
+
+                <h3 className="text-2xl sm:text-3xl font-black uppercase tracking-tight text-black mb-1">
+                  MATCH COMMENCING!
+                </h3>
+                <p className="text-xs sm:text-sm font-bold text-slate-600 mb-5">
+                  Aligning 3D Stadium & Pitch Spots Across All Devices...
+                </p>
+
+                {/* Big Animated Countdown */}
+                <div className="my-3 flex items-center justify-center">
+                  <motion.div
+                    key={startingCountdown}
+                    initial={{ scale: 1.5, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ type: 'spring', stiffness: 500, damping: 20 }}
+                    className="w-24 h-24 rounded-[24px] bg-gradient-to-tr from-amber-400 to-yellow-300 border-[4px] border-black flex items-center justify-center text-5xl font-black shadow-[0_6px_0_0_#000]"
+                  >
+                    {startingCountdown > 0 ? startingCountdown : '⚽'}
+                  </motion.div>
+                </div>
+
+                {/* 4 Contenders Sync Status */}
+                <div className="grid grid-cols-2 gap-2 mt-5 pt-4 border-t-2 border-black/10">
+                  {activePlayers.slice(0, 4).map((p, idx) => (
+                    <div
+                      key={p.id}
+                      className="flex items-center gap-2 p-2 rounded-[12px] bg-slate-50 border border-black/20 text-left"
+                    >
+                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
+                      <span className="text-xs font-black text-slate-800 truncate">
+                        {p.name || `Player ${idx + 1}`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </motion.div>
   );

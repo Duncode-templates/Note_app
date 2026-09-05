@@ -333,32 +333,8 @@ export default function KingOfTheHillController({
       return c;
     });
 
-    // Check if the current room leader was eliminated in this round
-    const effectiveHostId = currentHostId || onlineMatchManager.currentRoom?.host?.id || current.contenders[0]?.id;
-    const isLeaderEliminated = eliminatedIds.has(effectiveHostId);
-
-    if (isOnlineMatch && isLeaderEliminated) {
-      const remainingAlive = updatedContenders.filter((c) => !c.isEliminated);
-      // Prefer an active human contender, or the highest ranked survivor
-      const nextLeader = remainingAlive.find((c) => !c.isBot) || remainingAlive[0];
-      if (nextLeader) {
-        if (isLocalHost || effectiveHostId === onlineMatchManager.localPlayerId) {
-          onlineMatchManager.transferHostLeadershipToAlivePlayer(
-            nextLeader.id,
-            nextLeader.name,
-            nextLeader.countryCode,
-            nextLeader.avatarUrl
-          );
-        }
-        setCurrentHostId(nextLeader.id);
-        const isMe = nextLeader.id === onlineMatchManager.localPlayerId;
-        setLeaderTransferNotice(
-          isMe
-            ? '👑 YOU ARE NOW THE ROOM LEADER! Advance the tournament to the next round.'
-            : `👑 Room leader was eliminated! Title transferred to ${nextLeader.name} (still in the game).`
-        );
-      }
-    }
+    // Note: The host who started the match remains the room leader throughout the entire tournament
+    // even if eliminated in a round, ensuring leadership is never disrupted mid-match.
 
     setMatchState((prev) => ({
       ...prev,
@@ -623,7 +599,7 @@ export default function KingOfTheHillController({
     // Award prize coins if local player wins champion crown
     let awardedCoins = 0;
     if (winner.isLocalPlayer && !hasAwardedCoins) {
-      awardedCoins = current.prizePot || 500;
+      awardedCoins = current.prizePot ?? 30;
       onEarnCoins(awardedCoins);
       setHasAwardedCoins(true);
     }
